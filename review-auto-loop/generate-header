@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""Print the framed header for a review-auto-loop wave: title, config, run grid, and diff summary."""
+
+import argparse
+import re
+import subprocess
+from pathlib import Path
+
+DOMAINS = ("correctness", "readability", "tests", "docs")
+DOMAIN_OF_PREFIX = {"C": "correctness", "R": "readability", "T": "tests", "D": "docs"}
+PHASES = {"A": ("correctness", "readability"), "B": ("tests", "docs")}
+RUNNING = "▶ running"
+
+ITEM_HEADING = re.compile(r"### ([CRTD])(\d+) \(run (\d+), item \d+\)\s*$")
+DECISION = re.compile(r"\*\*Decision\*\*: (applied with changes|applied|declined)")
+RAW_ITEM = re.compile(r"\s{0,3}(?:#{1,6}\s+)?(\d+)[.)]\s")
+DOC_NAME = re.compile(r"wave(\d+)-\d{12}\.md")
+CHAIN_NAME = re.compile(r"wave(\d+)-([a-z]+)")
+RUN_NAME = re.compile(r"run(\d+)\.md")
+
+
+def review_revision(revision: str) -> str:
+    """The change identifier used in review filenames, stable across amends."""
+    out = subprocess.run(
+        ["jj", "log", "-r", revision, "--no-graph", "-T", "change_id.short(8)"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=None,
+        text=True,
+        check=True,
+    )
+    return out.stdout.strip()
+
+
+def diff_summary(revision: str) -> str:
+    """The trailing `N files changed, ...` line of the revision's diff stat, without its per-file lines."""
+    out = subprocess.run(
+        ["jj", "diff", "--stat", "-r", revision],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=None,
+        text=True,
+        check=True,
+    )
+    return " " + out.stdout.splitlines()[-1]
+
+
+def parse_config(pairs: list[str], parser: argparse.ArgumentParser) -> dict[str, int]:
+    """The per-domain caps from domain=N arguments, requiring each domain exactly once."""
+    caps: dict[str, int] = {}
+    for pair in pairs:
+        domain, sep, value = pair.partition("=")
+        if not sep or domain not in DOMAINS or not value.isdigit():
+            parser.error(f"Malformed config argument: {pair}")
+        if domain in caps:
+            parser.error(f"Duplicate config argument for {domain}")
+        caps[domain] = int(value)
+    if len(caps) != len(DOMAINS):
+        parser.error("Config must set every domain")
+    return caps
+
+
+def raw_item_count(text: str) -> int:
+    """Number of items in a raw review, from the highest top-level item number."""
+    numbers = [
+        int(match.group(1))
+        for line in text.splitlines()
+        if (match := RAW_ITEM.match(line))
+    ]
+    return max(numbers, default=0)
+
+
+def scan_exchange(
+    exchange_dir: Path, rev: str
+) -> tuple[
+    dict[int, Path], dict[tuple[int, str], list[int]], set[tuple[int, str, int]]
+]:
+    """Wave doc per wave, completed captures' item counts per chain in run order, and the in-flight runs (empty captures)."""
+    docs: dict[int, Path] = {}
+    runs: dict[tuple[int, str], dict[int, int]] = {}
+    running: set[tuple[int, str, int]] = set()
+    prefix = f"review-{rev}-"
+    for entry in sorted(exchange_dir.glob(f"{prefix}*")):
+        name = entry.name.removeprefix(prefix)
+        if entry.is_file() and (doc := DOC_NAME.fullmatch(name)):
+            wave = int(doc.group(1))
+            if wave in docs:
+                raise SystemExit(f"Duplicate wave docs for wave {wave}")
+            docs[wave] = entry
+        elif (
+            entry.is_dir()
+            and (chain := CHAIN_NAME.fullmatch(name))
+            and chain.group(2) in DOMAINS
+        ):
+            key = (int(chain.group(1)), chain.group(2))
+            for capture in sorted(entry.iterdir()):
+                if capture.suffix != ".md":
+                    continue
+                match = RUN_NAME.fullmatch(capture.name)
+                if match is None:
+                    raise SystemExit(f"Unexpected file in {entry.name}: {capture.name}")
+                text = capture.read_text()
+                if text.strip():
+                    runs.setdefault(key, {})[int(match.group(1))] = raw_item_count(text)
+                else:
+                    running.add((key[0], key[1], int(match.group(1))))
+        else:
+            raise SystemExit(f"Unexpected entry in exchange dir: {entry.name}")
+    counts: dict[tuple[int, str], list[int]] = {}
+    for key, by_run in runs.items():
+        if sorted(by_run) != list(range(1, len(by_run) + 1)):
+            raise SystemExit(f"Non-contiguous runs for wave {key[0]} {key[1]}")
+        counts[key] = [by_run[run] for run in range(1, len(by_run) + 1)]
+    for wave, domain, run in sorted(running):
+        if run != len(counts.get((wave, domain), [])) + 1:
+            raise SystemExit(
+                f"In-flight capture wave {wave} {domain} run {run} does not follow its chain"
+            )
+    return docs, counts, running
+
+
+def decided_counts(doc: Path) -> dict[tuple[str, int], list[int]]:
+    """Per (domain, run) counts [findings, applied, applied with changes] from a wave doc."""
+    counts: dict[tuple[str, int], list[int]] = {}
+    pending: str | None = None
+    key = ("", 0)
+    for line in doc.read_text().splitlines():
+        if heading := ITEM_HEADING.match(line):
+            if pending is not None:
+                raise SystemExit(f"Item {pending} in {doc.name} has no decision")
+            pending = heading.group(1) + heading.group(2)
+            key = (DOMAIN_OF_PREFIX[heading.group(1)], int(heading.group(3)))
+            counts.setdefault(key, [0, 0, 0])[0] += 1
+        elif (decision := DECISION.match(line)) and pending is not None:
+            if decision.group(1) == "applied":
+                counts[key][1] += 1
+            elif decision.group(1) == "applied with changes":
+                counts[key][2] += 1
+            pending = None
+    if pending is not None:
+        raise SystemExit(f"Item {pending} in {doc.name} has no decision")
+    return counts
+
+
+def grid(
+    raw: dict[tuple[int, str], list[int]],
+    running: set[tuple[int, str, int]],
+    docs: dict[int, Path],
+    wave: int,
+    active: tuple[str, ...],
+) -> tuple[dict[int, int], dict[tuple[int, int, str], str]]:
+    """Row count per wave and cell text per (wave, run, domain)."""
+    cells: dict[tuple[int, int, str], str] = {}
+    rows: dict[int, int] = {}
+    for past in range(1, wave):
+        doc = docs.get(past)
+        if doc is None:
+            raise SystemExit(f"Missing wave doc for completed wave {past}")
+        counts = decided_counts(doc)
+        for domain, run in counts:
+            if run > len(raw.get((past, domain), [])):
+                raise SystemExit(
+                    f"{doc.name} references {domain} run {run} with no raw file"
+                )
+        rows[past] = max(len(raw.get((past, domain), [])) for domain in DOMAINS)
+        if rows[past] == 0:
+            raise SystemExit(f"No raw files for completed wave {past}")
+        for domain in DOMAINS:
+            for run in range(1, len(raw.get((past, domain), [])) + 1):
+                found, applied, changed = counts.get((domain, run), [0, 0, 0])
+                if found == 0:
+                    cells[(past, run, domain)] = "0"
+                elif changed:
+                    cells[(past, run, domain)] = f"{applied}+{changed}/{found}"
+                else:
+                    cells[(past, run, domain)] = f"{applied}/{found}"
+    rows[wave] = 1
+    for domain in active:
+        counts_w = raw.get((wave, domain), [])
+        for run, found in enumerate(counts_w, 1):
+            cells[(wave, run, domain)] = str(found)
+        rows[wave] = max(rows[wave], len(counts_w))
+    for _, domain, run in running:
+        cells[(wave, run, domain)] = RUNNING
+        rows[wave] = max(rows[wave], run)
+    return rows, cells
+
+
+def render_table(
+    rows: dict[int, int], cells: dict[tuple[int, int, str], str]
+) -> list[str]:
+    """The run grid lines: header row, then one row per run, waves separated by rules."""
+    widths = {
+        domain: 2
+        + max(
+            len(domain),
+            max(
+                (len(text) for key, text in cells.items() if key[2] == domain),
+                default=0,
+            ),
+        )
+        for domain in DOMAINS
+    }
+    labels = {
+        (wave, run): f" wave {wave} run {run}"
+        if run == 1
+        else f" {'':{len(f'wave {wave}')}} run {run}"
+        for wave in rows
+        for run in range(1, rows[wave] + 1)
+    }
+    label_width = max(len(label) for label in labels.values()) + 1
+    separator = (
+        "─" * label_width + "┼" + "┼".join("─" * widths[domain] for domain in DOMAINS)
+    )
+    lines = [
+        " " * label_width
+        + "│"
+        + "│".join(domain.center(widths[domain]) for domain in DOMAINS)
+    ]
+    for wave in sorted(rows):
+        lines.append(separator)
+        for run in range(1, rows[wave] + 1):
+            cell_texts = (
+                cells.get((wave, run, domain), "").center(widths[domain])
+                for domain in DOMAINS
+            )
+            lines.append(
+                labels[(wave, run)].ljust(label_width) + "│" + "│".join(cell_texts)
+            )
+    return [line.rstrip() for line in lines]
+
+
+def main() -> None:
+    """Parse arguments and print the framed wave header."""
+    parser = argparse.ArgumentParser(
+        description="Print the framed header for a review wave."
+    )
+    parser.add_argument("revision", help="The reviewed Jujutsu revision")
+    parser.add_argument("exchange_dir", help="Directory holding the review files")
+    parser.add_argument("wave", type=int, help="Current wave number")
+    parser.add_argument("run", type=int, help="Run index announced by this display")
+    parser.add_argument(
+        "phase", choices=sorted(PHASES), help="Phase of the current wave"
+    )
+    parser.add_argument(
+        "config", nargs=4, help="Effective caps, one domain=N per domain"
+    )
+    args = parser.parse_args()
+
+    caps = parse_config(args.config, parser)
+    active = tuple(domain for domain in PHASES[args.phase] if caps[domain])
+    if not active:
+        parser.error("Both domains of the phase are excluded by the config")
+
+    rev = review_revision(args.revision)
+    docs, raw, running = scan_exchange(Path(args.exchange_dir), rev)
+    if any(wave > args.wave for wave in docs):
+        raise SystemExit("Wave docs exist beyond the current wave")
+    if any(wave > args.wave for wave, _ in raw) or any(
+        wave > args.wave for wave, _, _ in running
+    ):
+        raise SystemExit("Captures exist beyond the current wave")
+    for wave, domain, _ in sorted(running):
+        if wave < args.wave:
+            raise SystemExit(f"In-flight capture for past wave {wave}")
+        if domain not in active:
+            raise SystemExit(f"In-flight capture for inactive domain {domain}")
+    for wave, domain in raw:
+        if wave == args.wave and domain not in active:
+            raise SystemExit(f"Completed captures exist for inactive domain {domain}")
+
+    rows, cells = grid(raw, running, docs, args.wave, active)
+    total = sum(len(counts) for counts in raw.values()) + len(running)
+    title = f" Wave {args.wave}, run {args.run} — {total} total reviews"
+    config = " Wave config: " + " · ".join(
+        f"{domain} ≤{caps[domain]}" if caps[domain] else f"{domain} =0"
+        for domain in DOMAINS
+    )
+    table = render_table(rows, cells)
+    summary = diff_summary(args.revision)
+
+    width = max(len(line) for line in (title, config, *table, summary))
+    rule = "═" * width
+    for line in (rule, title, config, summary, rule, *table, rule):
+        print(line)
+
+
+if __name__ == "__main__":
+    main()

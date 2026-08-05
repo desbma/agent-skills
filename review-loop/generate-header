@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Print the framed header for a review-loop round: title, pipeline progress, and diff summary."""
+
+import argparse
+import re
+import subprocess
+from pathlib import Path
+
+DOMAINS = ("correctness", "readability", "tests", "docs")
+
+
+def review_revision(revision: str) -> str:
+    """The change identifier used in review filenames, stable across amends."""
+    out = subprocess.run(
+        ["jj", "log", "-r", revision, "--no-graph", "-T", "change_id.short(8)"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=None,
+        text=True,
+        check=True,
+    )
+    return out.stdout.strip()
+
+
+def round_counts(exchange_dir: str, rev: str) -> tuple[dict[str, int], int]:
+    """Past review count per domain, and the number this round will carry."""
+    counts = {d: 0 for d in DOMAINS}
+    highest = 0
+    pattern = re.compile(rf"review-{re.escape(rev)}-(\d+)-([a-z]+)-\d+\.md")
+    for path in Path(exchange_dir).glob(f"review-{rev}-*.md"):
+        match = pattern.fullmatch(path.name)
+        if match is None:
+            continue
+        counts[match.group(2)] += 1
+        highest = max(highest, int(match.group(1)))
+    return counts, highest + 1
+
+
+def segment(domain: str, marker: str, count: int) -> str:
+    """Format one pipeline entry, appending the round count only when nonzero."""
+    label = f"{marker} {domain.capitalize()}" if marker else domain.capitalize()
+    return f"{label} [{count}]" if count else label
+
+
+def pipeline_line(current: str, counts: dict[str, int]) -> str:
+    """Join all domains in canonical order, marking the current one; counts show past rounds."""
+    parts = [
+        segment(domain, "▸" if domain == current else "", counts[domain])
+        for domain in DOMAINS
+    ]
+    return " → ".join(parts)
+
+
+def diff_summary(revision: str) -> str:
+    """The trailing `N files changed, ...` line of the revision's diff stat, without its per-file lines."""
+    out = subprocess.run(
+        ["jj", "diff", "--stat", "-r", revision],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=None,
+        text=True,
+        check=True,
+    )
+    return " " + out.stdout.splitlines()[-1]
+
+
+def main() -> None:
+    """Parse arguments and print the framed round header."""
+    parser = argparse.ArgumentParser(
+        description="Print the framed header for a review round."
+    )
+    parser.add_argument("revision", help="The reviewed Jujutsu revision")
+    parser.add_argument("current", choices=DOMAINS, help="The domain of this round")
+    parser.add_argument("exchange_dir", help="Directory holding the review files")
+    args = parser.parse_args()
+
+    rev = review_revision(args.revision)
+    counts, number = round_counts(args.exchange_dir, rev)
+
+    title = f" Review round #{number} — {args.current.capitalize()}"
+    pipeline = " " + pipeline_line(args.current, counts)
+    summary = diff_summary(args.revision)
+    width = max(len(line) for line in (title, pipeline, summary))
+
+    print("═" * width)
+    print(title)
+    print(pipeline)
+    print(summary)
+    print("═" * width)
+
+
+if __name__ == "__main__":
+    main()
