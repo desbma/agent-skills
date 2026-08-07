@@ -94,11 +94,7 @@ The heading's `run` and `item` locate the item in its raw file. The `**Assessmen
 
 7. Annotate the wave doc in place: add every item's `**Decision**` line, with the reason for the decision. Never open or show the annotated doc — it only records decisions the user has just made, from a doc they already have.
 
-8. Recommend the next step, with the reason for the recommendation, and ask the user to decide, picking it in this order:
-   - after a phase A wave where the user picked about 5 or more items, or where a chain was still yielding items when it hit its cap: repeat phase A — the domains are not exhausted, and the applied changes give the next wave fresh surface
-   - after any other phase A wave: move to phase B
-   - after a phase B wave whose applied items restructured enough code to warrant it: return to phase A
-   - after any other phase B wave: end the loop
+8. Lay out the choices for the next step, and ask the user to decide. They are: repeat the current phase, run the other phase, or end the loop. Give the facts that bear on the choice — how many items the user picked, whether a chain was still yielding items when it hit its cap, and what the applied changes touched.
 
 9. Wait. The user now reviews the changes, may ask questions or request further edits, and squashes into the reviewed revision. Launch the next wave only on their explicit go, never before: reviews must only ever see squashed state.
 

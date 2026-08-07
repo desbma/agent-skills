@@ -62,12 +62,7 @@ Each round captures the reviewer output into a markdown file in the exchange dir
 5. Let the user pick the items to apply, possibly partially or with changes.
 6. Apply the picked items, then describe your changes so the user can review them.
 7. Annotate the review markdown file in the exchange dir in place: mark each item as applied, applied with changes, or declined, with the reason for the decision. This is what keeps the next reviewer from raising it again. Never open or show the annotated file — it only records decisions the user has just made, from a file they already have.
-8. Recommend the next step, then ask the user to confirm or override. Give the reason for the recommendation, and pick it in this order:
-   - when the user picked about 5 or more items this round, recommend repeating the same domain: a domain still landing that many changes is not exhausted, and the changes just applied give the next round fresh surface
-   - otherwise, when the changes applied this round warrant revisiting an earlier domain, recommend that one — for example, after a tests round that restructured the code, recommend a readability round
-   - otherwise, move to the next domain in the canonical order
-
-   The user may pick any domain, repeat the current one, or end the loop.
+8. Lay out the choices for the next step, and ask the user to decide. They are: repeat the current domain, run any of the other domains, or end the loop. List them in canonical domain order, and give the facts that bear on the choice — how many items the user picked this round, and what the applied changes touched.
 
 ## Rules
 
