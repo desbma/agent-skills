@@ -14,10 +14,20 @@ The user supplies a revision; ask for it if it is missing.
 
 Each domain maps to a review skill, an item id prefix, and a default cap on chain runs per wave:
 
-- `correctness` → `review-correctness`, prefix `C`, cap 2
-- `readability` → `review-readability`, prefix `R`, cap 2
+- `correctness` → `review-correctness`, prefix `C`, cap from diff size
+- `readability` → `review-readability`, prefix `R`, cap from diff size
 - `tests` → `review-tests`, prefix `T`, cap 1
 - `docs` → `review-docs`, prefix `D`, cap 1
+
+The correctness and readability caps are the same value, derived once at the start of the loop from the size of the revision's diff — the sum of the insertions and deletions on the last line of:
+
+```bash
+jj diff -r <JJ_REVISION> --stat | tail -1
+```
+
+- under 100 lines → cap 1
+- 100 to 1000 lines → cap 2
+- over 1000 lines → cap 3
 
 A wave runs two domains in parallel: phase A waves run correctness and readability, phase B waves run tests and docs. The split keeps the domains that change production code apart from those that follow it. The loop starts at phase A, and moves between phases as the user decides at the end of each wave.
 
