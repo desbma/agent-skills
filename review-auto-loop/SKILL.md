@@ -74,7 +74,12 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 
 A wave doc is written as its runs complete, but the order they complete in never drives its layout: an assessed item goes at the end of its own domain's section, never at the end of the doc, and a domain's first item creates its section at the canonical position. A chain finishing ahead of the other never interleaves the two sections.
 
-The heading's `run` and `item` locate the item in its raw file. The `**Assessment**` line carries the verdict alone; the justification follows as prose. The `**Decision**` line is added at annotation time, and must end up present on every item. Keep these exact formats: the header script parses headings and decision lines, and fails loudly otherwise.
+The heading's `run` and `item` locate the item in its raw file. The `**Assessment**` line carries the verdict alone; the justification follows as prose. Keep these exact formats: the header script parses headings and decision lines, and fails loudly otherwise.
+
+The `**Decision**` line is added at annotation time, exactly one per item:
+
+- the verdict verbatim and bare — no emphasis, no punctuation, no qualifier
+- then the em dash and a reason, never empty, holding whatever the verdict cannot
 
 ## Wave round
 
@@ -104,7 +109,7 @@ The heading's `run` and `item` locate the item in its raw file. The `**Assessmen
 
 6. Apply the picked items in canonical domain order — correctness, readability, tests, docs. When two picked items collide, apply the correctness one first and adapt the other to the resulting code. Describe your changes so the user can review them.
 
-7. Annotate the wave doc in place: add every item's `**Decision**` line, with the reason for the decision. Never open or show the annotated doc — it only records decisions the user has just made, from a doc they already have.
+7. Annotate the wave doc in place: give every item its `**Decision**` line, in the shape the wave doc section fixes — bare verdict, em dash, reason. Never open or show the annotated doc — it only records decisions the user has just made, from a doc they already have.
 
 8. Lay out the choices for the next step, and ask the user to decide. They are: repeat the current phase, run the other phase, or end the loop. Give the facts that bear on the choice — how many items the user picked, whether a chain was still yielding items when it hit its cap, and what the applied changes touched.
 
