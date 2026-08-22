@@ -58,7 +58,7 @@ If wave docs for the change already exist, the loop resumes from them: the wave 
 
 ## Wave doc
 
-Items are numbered with the domain prefix and a counter continuous across the whole loop: `C7` is the seventh correctness item the loop ever produced, whatever its wave. A wave doc contains one section per domain, items in id order, each formatted as:
+Items are numbered with the domain prefix and a counter continuous across the whole loop: `C7` is the seventh correctness item the loop ever produced, whatever its wave. A wave doc contains one section per domain, in canonical domain order — correctness, readability, tests, docs — each holding its items in id order, each formatted as:
 
 ```markdown
 ### C7 (run 1, item 3)
@@ -71,6 +71,8 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 
 **Decision**: applied | applied with changes | declined — reason
 ```
+
+A wave doc is written as its runs complete, but the order they complete in never drives its layout: an assessed item goes at the end of its own domain's section, never at the end of the doc, and a domain's first item creates its section at the canonical position. A chain finishing ahead of the other never interleaves the two sections.
 
 The heading's `run` and `item` locate the item in its raw file. The `**Assessment**` line carries the verdict alone; the justification follows as prose. The `**Decision**` line is added at annotation time, and must end up present on every item. Keep these exact formats: the header script parses headings and decision lines, and fails loudly otherwise.
 
