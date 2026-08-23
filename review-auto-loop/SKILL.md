@@ -72,7 +72,9 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 ```markdown
 ### C7 (run 1, item 3)
 
-<the item, reproduced faithfully from the raw file>
+> **Severity**: critical | major | minor
+>
+> <the rest of the item, reproduced faithfully from the raw file>
 
 **Claim**: holds | partly holds | does not hold, critical | major | minor
 
@@ -82,6 +84,8 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 
 **Decision**: applied | applied with changes | declined — reason
 ```
+
+The item is quoted whole and the assessment below it stays flush, so a reader tells the reviewer's words from yours by shape alone: every line of the item takes the `> ` prefix, its code fences included, and its blank lines become a bare `>`. The prefix is the only change it takes — nothing is edited, dropped or reordered.
 
 A wave doc is written as its runs complete, but the order they complete in never drives its layout: an assessed item goes at the end of its own domain's section, never at the end of the doc, and a domain's first item creates its section at the canonical position. A chain finishing ahead of the other never interleaves the two sections.
 

@@ -43,7 +43,7 @@ Report at most about 10 items. Report fewer, or none at all, if that is all the 
 For each item:
 
 - give it a number, so it can be referenced unambiguously
-- open it with its severity on its own line, `Severity: critical`, `Severity: major` or `Severity: minor`
+- open it with its severity on its own line, `**Severity**: critical`, `**Severity**: major` or `**Severity**: minor`
 - show code snippets for the suggested change; when the item rewrites existing code, showing it as a before/after pair is encouraged, as it reads better than the proposed code alone — use it where it helps, not for items that only add code
 
 Severity rates the consequence of leaving the item unfixed — how bad it is, and how readily it is reached. It rates neither the effort of fixing it nor how strongly you believe the item is right:
