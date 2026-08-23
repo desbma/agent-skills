@@ -1,14 +1,20 @@
 ---
 name: review-auto-loop
 description: Review Jujutsu revision changes with external pi reviewer agents, in waves of parallel per-domain review chains, driven by the user. Use only when the user asks for this loop by name, or gives the go for the next wave of a loop already underway; a request to review a revision, on its own, is not enough. Do NOT use to read, answer or apply a review that already exists and was written by something else; handle those directly, without this skill.
-argument-hint: "<JJ_REVISION> [domain=N ...]"
+argument-hint: "[JJ_REVISION] [domain=N ...]"
 ---
 
 # Review auto-loop
 
-Review the Jujutsu changes for the revision supplied by the user with external reviewer agents, and apply the review items the user picks. Reviews run in waves of two domains in parallel, each domain running a short chain of reviews.
+Review the Jujutsu changes for the target revision with external reviewer agents, and apply the review items the user picks. Reviews run in waves of two domains in parallel, each domain running a short chain of reviews.
 
-The user supplies a revision; ask for it if it is missing.
+The user supplies a revision. If they do not, resolve it once, when the loop starts, to the most recent non-empty change:
+
+```bash
+jj log -r 'latest(::@ & ~empty())' --no-graph -T 'change_id'
+```
+
+Its output is `<JJ_REVISION>` for the whole loop: every wave reviews that same change, whatever the working copy holds by then.
 
 ## Domains, phases and config
 

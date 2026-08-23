@@ -1,13 +1,13 @@
 ---
 name: review-tests
 description: Review Jujutsu revision changes from jj show and propose test additions, fixes or removals.
-argument-hint: "<JJ_REVISION>"
+argument-hint: "[JJ_REVISION]"
 disable-model-invocation: true
 ---
 
 # Review tests of Jujutsu changes
 
-Review the Jujutsu changes for the revision supplied by the user, and propose changes to the tests covering them.
+Review the Jujutsu changes for the target revision, and propose changes to the tests covering them.
 
 Follow the common review instructions: @../review-common.md
 

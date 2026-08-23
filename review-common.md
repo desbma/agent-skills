@@ -4,15 +4,19 @@ Instructions shared by all `review-*` skills.
 
 ## Input
 
-A review targets a single Jujutsu revision, supplied by the user. If no revision is supplied, ask for one.
+A review targets a single Jujutsu revision, supplied by the user as `<JJ_REVISION>`. If none is supplied, resolve it to the most recent non-empty change:
+
+```bash
+jj log -r 'latest(::@ & ~empty())' --no-graph -T 'change_id'
+```
+
+Whether given or resolved, `<JJ_REVISION>` is fixed for the whole review: use that exact value everywhere below.
 
 Run:
 
 ```bash
 jj show <JJ_REVISION>
 ```
-
-Replace `<JJ_REVISION>` with the exact revision argument.
 
 Derive the label used to find previous review files:
 

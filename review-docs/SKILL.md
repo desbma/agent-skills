@@ -1,13 +1,13 @@
 ---
 name: review-docs
 description: Review Jujutsu revision changes from jj show and report documentation and comments out of sync with the code.
-argument-hint: "<JJ_REVISION>"
+argument-hint: "[JJ_REVISION]"
 disable-model-invocation: true
 ---
 
 # Review documentation of Jujutsu changes
 
-Review the Jujutsu changes for the revision supplied by the user, and report documentation that no longer matches the code.
+Review the Jujutsu changes for the target revision, and report documentation that no longer matches the code.
 
 Follow the common review instructions: @../review-common.md
 

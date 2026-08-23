@@ -1,13 +1,13 @@
 ---
 name: review-readability
 description: Review Jujutsu revision changes from jj show and propose simplifications, more idiomatic code, and better consistency with surrounding patterns.
-argument-hint: "<JJ_REVISION>"
+argument-hint: "[JJ_REVISION]"
 disable-model-invocation: true
 ---
 
 # Review readability of Jujutsu changes
 
-Review the Jujutsu changes for the revision supplied by the user, and propose ways to improve the code — above all by cutting its line count, and further by making it more idiomatic and consistent with the patterns the surrounding code already uses.
+Review the Jujutsu changes for the target revision, and propose ways to improve the code — above all by cutting its line count, and further by making it more idiomatic and consistent with the patterns the surrounding code already uses.
 
 Follow the common review instructions: @../review-common.md
 

@@ -1,13 +1,13 @@
 ---
 name: review-correctness
 description: Review Jujutsu revision changes from jj show and report correctness and completeness defects.
-argument-hint: "<JJ_REVISION>"
+argument-hint: "[JJ_REVISION]"
 disable-model-invocation: true
 ---
 
 # Review correctness of Jujutsu changes
 
-Review the Jujutsu changes for the revision supplied by the user, and report defects that make the code behave incorrectly or incompletely.
+Review the Jujutsu changes for the target revision, and report defects that make the code behave incorrectly or incompletely.
 
 Follow the common review instructions: @../review-common.md
 
