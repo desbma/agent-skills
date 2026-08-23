@@ -67,21 +67,37 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 
 <the item, reproduced faithfully from the raw file>
 
-**Assessment**: agreed | partially agreed | disagreed
+**Claim**: holds | partly holds | does not hold
 
 <the justification prose>
+
+**Proposal**: apply | apply with changes | decline | your call — what to do
 
 **Decision**: applied | applied with changes | declined — reason
 ```
 
 A wave doc is written as its runs complete, but the order they complete in never drives its layout: an assessed item goes at the end of its own domain's section, never at the end of the doc, and a domain's first item creates its section at the canonical position. A chain finishing ahead of the other never interleaves the two sections.
 
-The heading's `run` and `item` locate the item in its raw file. The `**Assessment**` line carries the verdict alone; the justification follows as prose. Keep these exact formats: the header script parses headings and decision lines, and fails loudly otherwise.
+The heading's `run` and `item` locate the item in its raw file. The `**Claim**` line carries the verdict alone; the justification follows as prose. Keep these exact formats: the header script parses headings and decision lines, and fails loudly otherwise.
+
+The `**Claim**` line judges the item as the reviewer wrote it — whether its diagnosis survives reading the code — and nothing else. It never carries a course of action.
+
+The `**Proposal**` line carries the course of action, in the shape the decision line uses: the verdict verbatim and bare, then an em dash and the concrete change, never empty.
+
+- `apply` — the item's fix, as the item writes it
+- `apply with changes` — a different change; the tail names it
+- `decline` — no change; the tail says why
+- `your call` — a choice that is genuinely the user's; the tail states it as `(a) … (b) …`, so a reply can name an option
+
+The two lines are independent. An item whose claim holds still gets `decline` when the fix costs more than the flaw it closes; one whose claim does not hold still gets `apply with changes` when checking it uncovered a different, real change. Outside `your call` the proposal never hedges: "worth doing, or skip" is not a proposal, it is `apply with changes` or `your call`.
 
 The `**Decision**` line is added at annotation time, exactly one per item:
 
 - the verdict verbatim and bare — no emphasis, no punctuation, no qualifier
 - then the em dash and a reason, never empty, holding whatever the verdict cannot
+- `applied with changes` means the applied change departs from the item as the reviewer wrote it, whoever asked for the departure
+
+Taking the proposal as offered maps verdict for verdict: `apply` to `applied`, `apply with changes` to `applied with changes`, `decline` to `declined`. A `your call` item, or a pick that overrides the proposal, takes the verdict the user's choice actually produced.
 
 ## Wave round
 
@@ -103,11 +119,17 @@ The `**Decision**` line is added at annotation time, exactly one per item:
 
    Run it as a trusted helper of this skill: do not open or read it, and do not reproduce or summarize its output — its terminal output is the header, shown to the user directly.
 
-3. As each run completes: launch the chain's next run if one is due, then show the header again (step 2 command, with the completed run's index), then read its capture `<CHAIN_DIR>/run<K>.md` and assess its items into the wave doc: read the code each item talks about and check its claims rather than trust them; give each item a status — agreed, partially agreed, or disagreed — justified at whatever length it deserves; for a partially agreed item, say what you would do differently and why; flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, record that instead of assessing it twice. Present assessments in item id order.
+3. As each run completes: launch the chain's next run if one is due, then show the header again (step 2 command, with the completed run's index), then read its capture `<CHAIN_DIR>/run<K>.md` and assess its items into the wave doc: read the code each item talks about and check its claims rather than trust them; give each item a `**Claim**` verdict, justified at whatever length it deserves, then a `**Proposal**` naming what you would actually do; flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, record that instead of assessing it twice. Present assessments in item id order.
 
-4. When every chain is done, show the header once more, then write the wave doc's top part by running the step 2 command again with `--doc <WAVE_DOC>` appended — it prints nothing and prepends the top part to the doc — then open the wave doc for the user with `xdg-open <WAVE_DOC>`. It is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Follow with a one-line recap grouping every item: apply, apply with changes, decline, open — open being the calls that are genuinely the user's (collisions, tradeoffs).
+4. When every chain is done, show the header once more, then write the wave doc's top part by running the step 2 command again with `--doc <WAVE_DOC>` appended — it prints nothing and prepends the top part to the doc — then open the wave doc for the user with `xdg-open <WAVE_DOC>`. It is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Follow with a one-line recap grouping every item by its `**Proposal**` verdict — apply, apply with changes, decline, your call — in the doc's own words rather than a fresh formulation.
 
-5. Let the user pick the items to apply, possibly partially or with changes. If their reply asks anything, answer it and change nothing, then wait again: the next message carries the picks, or more questions. Move to step 6 only on a reply that asks nothing.
+5. Let the user pick, item by item. A bare `apply` resolves against that item's `**Proposal**`, never against the reviewer's text:
+
+   - proposed `apply` or `apply with changes` — carry out the proposal
+   - proposed `decline` — the user is overriding the decline; carry out the item as the reviewer wrote it, and say so before acting
+   - proposed `your call` — a bare `apply` is not an answer; ask which option
+
+   A pick may also override the proposal with an instruction of its own, which then replaces it. If their reply asks anything, answer it and change nothing, then wait again: the next message carries the picks, or more questions. Move to step 6 only on a reply that asks nothing.
 
 6. Apply the picked items in canonical domain order — correctness, readability, tests, docs. When two picked items collide, apply the correctness one first and adapt the other to the resulting code. Describe your changes so the user can review them.
 
@@ -122,7 +144,7 @@ The `**Decision**` line is added at annotation time, exactly one per item:
 - The header script is run verbatim: no pipe, no redirection, no `head`/`tail`/`grep`, no output limit. Its output is for the user, not for you to digest, so its length is never a reason to trim it.
 - Never apply an item the user did not pick.
 - Apply each picked item completely: carry the change through every aspect it naturally touches, even ones another domain owns — a correctness fix ships with its test, and with the cleanup or doc update the same change calls for. Never leave part of a change undone because a later wave would cover that aspect.
-- Never omit an item from your assessment, however wrong you think it is.
+- Never omit an item from the wave doc, however wrong you think it is.
 - Get an explicit approval and explicit choices from the user. If an answer is ambiguous, or leaves one of your questions unanswered, ask again rather than assume a default.
 - Never run a Jujutsu command that changes the VCS state. The user handles the VCS between waves.
 - The loop ends when the user says so, not when a wave comes back empty.
