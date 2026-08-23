@@ -27,7 +27,8 @@ jj diff -r <JJ_REVISION> --stat | tail -1
 
 - under 100 lines → cap 1
 - 100 to 1000 lines → cap 2
-- over 1000 lines → cap 3
+- 1000 to 5000 lines → cap 3
+- over 5000 lines → cap 4
 
 A wave runs two domains in parallel: phase A waves run correctness and readability, phase B waves run tests and docs. The split keeps the domains that change production code apart from those that follow it. The loop starts at phase A, and moves between phases as the user decides at the end of each wave.
 
