@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print the framed header for a review-auto-loop wave: title, config, run grid, and diff summary."""
+"""Print the framed header for a review-auto-loop wave, or write the markdown top part of its wave doc."""
 
 import argparse
 import re
@@ -42,7 +42,15 @@ def diff_summary(revision: str) -> str:
         text=True,
         check=True,
     )
-    return " " + out.stdout.splitlines()[-1]
+    return out.stdout.splitlines()[-1]
+
+
+def config_text(caps: dict[str, int]) -> str:
+    """The per-domain caps as one line, excluded domains shown as `=0`."""
+    return " · ".join(
+        f"{domain} ≤{caps[domain]}" if caps[domain] else f"{domain} =0"
+        for domain in DOMAINS
+    )
 
 
 def parse_config(pairs: list[str], parser: argparse.ArgumentParser) -> dict[str, int]:
@@ -186,13 +194,10 @@ def grid(
     return rows, cells
 
 
-def render_table(
-    rows: dict[int, int], cells: dict[tuple[int, int, str], str]
-) -> list[str]:
-    """The run grid lines: header row, then one row per run, waves separated by rules."""
-    widths = {
-        domain: 2
-        + max(
+def cell_widths(cells: dict[tuple[int, int, str], str]) -> dict[str, int]:
+    """Width of the widest cell per domain column, its header included."""
+    return {
+        domain: max(
             len(domain),
             max(
                 (len(text) for key, text in cells.items() if key[2] == domain),
@@ -201,6 +206,13 @@ def render_table(
         )
         for domain in DOMAINS
     }
+
+
+def render_table(
+    rows: dict[int, int], cells: dict[tuple[int, int, str], str]
+) -> list[str]:
+    """The run grid lines: header row, then one row per run, waves separated by rules."""
+    widths = {domain: width + 2 for domain, width in cell_widths(cells).items()}
     labels = {
         (wave, run): f" wave {wave} run {run}"
         if run == 1
@@ -230,6 +242,68 @@ def render_table(
     return [line.rstrip() for line in lines]
 
 
+def render_markdown(
+    rows: dict[int, int],
+    cells: dict[tuple[int, int, str], str],
+    current: int,
+    rev: str,
+    caps: dict[str, int],
+    total: int,
+    summary: str,
+) -> list[str]:
+    """The wave doc's top part: title, status list, and the run grid as a markdown table."""
+    labels = {
+        (wave, run): f"wave {wave} run {run}" if run == 1 else f"run {run}"
+        for wave in rows
+        for run in range(1, rows[wave] + 1)
+    }
+    label_width = max(len(label) for label in labels.values())
+    widths = cell_widths(cells)
+    lines = [
+        f"# Review wave {current} — {rev}",
+        "",
+        f"- **Config**: {config_text(caps)}",
+        f"- **Reviews**: {total} total",
+        f"- **Diff**: {summary}",
+        "",
+        "| "
+        + " " * label_width
+        + " | "
+        + " | ".join(domain.ljust(widths[domain]) for domain in DOMAINS)
+        + " |",
+        "| "
+        + "-" * (label_width - 1)
+        + ": | "
+        + " | ".join("-" * widths[domain] for domain in DOMAINS)
+        + " |",
+    ]
+    for wave in sorted(rows):
+        for run in range(1, rows[wave] + 1):
+            cell_texts = (
+                cells.get((wave, run, domain), "").ljust(widths[domain])
+                for domain in DOMAINS
+            )
+            lines.append(
+                "| "
+                + labels[(wave, run)].rjust(label_width)
+                + " | "
+                + " | ".join(cell_texts)
+                + " |"
+            )
+    return lines
+
+
+def write_doc(path: Path, rev: str, wave: int, top: list[str]) -> None:
+    """Prepend the generated top part to the wave doc, keeping its existing content."""
+    name = DOC_NAME.fullmatch(path.name.removeprefix(f"review-{rev}-"))
+    if name is None or int(name.group(1)) != wave:
+        raise SystemExit(f"Not the wave {wave} doc for this change: {path.name}")
+    body = path.read_text().lstrip("\n") if path.exists() else ""
+    if body.startswith("# "):
+        raise SystemExit(f"Wave doc already has a top part: {path.name}")
+    path.write_text("\n".join(top) + "\n" + (f"\n{body}" if body else ""))
+
+
 def main() -> None:
     """Parse arguments and print the framed wave header."""
     parser = argparse.ArgumentParser(
@@ -244,6 +318,11 @@ def main() -> None:
     )
     parser.add_argument(
         "config", nargs=4, help="Effective caps, one domain=N per domain"
+    )
+    parser.add_argument(
+        "--doc",
+        type=Path,
+        help="Wave doc to prepend the generated top part to, instead of printing the header",
     )
     args = parser.parse_args()
 
@@ -271,17 +350,21 @@ def main() -> None:
 
     rows, cells = grid(raw, running, docs, args.wave, active)
     total = sum(len(counts) for counts in raw.values()) + len(running)
-    title = f" Wave {args.wave}, run {args.run} — {total} total reviews"
-    config = " Wave config: " + " · ".join(
-        f"{domain} ≤{caps[domain]}" if caps[domain] else f"{domain} =0"
-        for domain in DOMAINS
-    )
-    table = render_table(rows, cells)
     summary = diff_summary(args.revision)
 
-    width = max(len(line) for line in (title, config, *table, summary))
+    if args.doc is not None:
+        top = render_markdown(rows, cells, args.wave, rev, caps, total, summary)
+        write_doc(args.doc, rev, args.wave, top)
+        return
+
+    title = f" Wave {args.wave}, run {args.run} — {total} total reviews"
+    config = " Wave config: " + config_text(caps)
+    stat = f" {summary}"
+    table = render_table(rows, cells)
+
+    width = max(len(line) for line in (title, config, *table, stat))
     rule = "═" * width
-    for line in (rule, title, config, summary, rule, *table, rule):
+    for line in (rule, title, config, stat, rule, *table, rule):
         print(line)
 
 
