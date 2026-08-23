@@ -34,4 +34,5 @@ Also report comments and docstrings that break the rules of the "Comment and doc
 - Quote both the code and the documentation that contradict each other
 - Fix documentation that is out of sync, only delete it when what it describes is gone
 - Be sparing with new documentation, do not propose any for its own sake
+- Anchor severity to what the documentation makes its reader do: `critical` when following it destroys state or costs work that cannot be recovered; `major` when it contradicts the code and sends the reader down a path that does not exist; `minor` for a style rule break, or for documentation missing where the code already says it
 - Stay on documentation: correctness, readability and test coverage are covered by other review domains

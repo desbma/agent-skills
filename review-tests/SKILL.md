@@ -27,4 +27,5 @@ Propose to:
 - Never propose to change the main code to make it easier to test, take it as it is
 - Prefer a few meaningful tests over coverage for its own sake
 - State the regression each proposed test would catch
+- Anchor severity to the signal the suite gives today: `critical` when the signal is false — a test pinning wrong behavior as correct, or one that fails on states the code handles; `major` for behavior left untested that would regress silently; `minor` for a redundant or useless test, and for a case another test already covers
 - Stay on tests: correctness, readability and documentation are covered by other review domains

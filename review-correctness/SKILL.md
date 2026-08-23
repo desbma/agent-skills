@@ -28,4 +28,5 @@ Take the revision description and the surrounding code as the statement of inten
 - Do not report a bare suspicion: either exhibit the triggering input, or name what blocked you from confirming it
 - Flag algorithmic complexity only when a realistic input can make its cost explode and a better alternative exists; small performance micro optimizations are out of scope
 - Give a rough line count delta for each fix, so the reader can weigh its cost against the defect's impact
+- Anchor severity to what the defect does when it triggers: `critical` for data loss, corruption, a crash, a hang or a security hole on a path ordinary use reaches; `major` for a wrong result or a stall on a plausible input; `minor` for a defect whose trigger is far-fetched or whose consequence the caller absorbs
 - Stay on correctness: readability, documentation and test coverage are covered by other review domains

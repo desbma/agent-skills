@@ -39,6 +39,15 @@ Report at most about 10 items. Report fewer, or none at all, if that is all the 
 For each item:
 
 - give it a number, so it can be referenced unambiguously
+- open it with its severity on its own line, `Severity: critical`, `Severity: major` or `Severity: minor`
 - show code snippets for the suggested change; when the item rewrites existing code, showing it as a before/after pair is encouraged, as it reads better than the proposed code alone — use it where it helps, not for items that only add code
+
+Severity rates the consequence of leaving the item unfixed — how bad it is, and how readily it is reached. It rates neither the effort of fixing it nor how strongly you believe the item is right:
+
+- `critical` — a severe consequence, on a path ordinary use reaches
+- `major` — a real consequence, but bounded, recoverable, or on a path only some runs reach
+- `minor` — a narrow or cosmetic consequence, or one only a maintainer pays
+
+Each domain anchors these levels to its own kind of consequence, and some domains have no reachable `critical`. Rate an item against those anchors, never against the other items of the review: a review that yields only minor items reports only minor items.
 
 Order items by decreasing impact.

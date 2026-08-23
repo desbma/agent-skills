@@ -67,7 +67,7 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 
 <the item, reproduced faithfully from the raw file>
 
-**Claim**: holds | partly holds | does not hold
+**Claim**: holds | partly holds | does not hold, critical | major | minor
 
 <the justification prose>
 
@@ -78,9 +78,11 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 
 A wave doc is written as its runs complete, but the order they complete in never drives its layout: an assessed item goes at the end of its own domain's section, never at the end of the doc, and a domain's first item creates its section at the canonical position. A chain finishing ahead of the other never interleaves the two sections.
 
-The heading's `run` and `item` locate the item in its raw file. The `**Claim**` line carries the verdict alone; the justification follows as prose. Keep these exact formats: the header script parses headings and decision lines, and fails loudly otherwise.
+The heading's `run` and `item` locate the item in its raw file. The `**Claim**` line carries the verdict and the severity alone; the justification follows as prose. Keep these exact formats: the header script parses headings and decision lines, and fails loudly otherwise.
 
-The `**Claim**` line judges the item as the reviewer wrote it — whether its diagnosis survives reading the code — and nothing else. It never carries a course of action.
+The `**Claim**` line judges the item as the reviewer wrote it — whether its diagnosis survives reading the code, and how severe what survives is — and nothing else. It never carries a course of action.
+
+The severity follows the verdict after a comma: the reviewer's own, copied verbatim when it stands, replaced when it does not, the prose then saying what moved it. State it on every item rather than let silence stand for agreement; the reviewer's own stays visible in the reproduced item, so a downgrade reads as a disagreement and not as an erasure. A `partly holds` item is rated on what survives, not on what the reviewer claimed. `does not hold` is the one exception: no defect survives, so there is nothing to rate and the line ends at the verdict.
 
 The `**Proposal**` line carries the course of action, in the shape the decision line uses: the verdict verbatim and bare, then an em dash and the concrete change, never empty.
 
@@ -90,6 +92,8 @@ The `**Proposal**` line carries the course of action, in the shape the decision 
 - `your call` — a choice that is genuinely the user's; the tail states it as `(a) … (b) …`, so a reply can name an option
 
 The two lines are independent. An item whose claim holds still gets `decline` when the fix costs more than the flaw it closes; one whose claim does not hold still gets `apply with changes` when checking it uncovered a different, real change. Outside `your call` the proposal never hedges: "worth doing, or skip" is not a proposal, it is `apply with changes` or `your call`.
+
+The severity is what makes a `decline` legible. Declining a `minor` item needs no defense; declining a `critical` one has to name what outweighs it, and when nothing does, the severity was wrong.
 
 The `**Decision**` line is added at annotation time, exactly one per item:
 
@@ -119,9 +123,9 @@ Taking the proposal as offered maps verdict for verdict: `apply` to `applied`, `
 
    Run it as a trusted helper of this skill: do not open or read it, and do not reproduce or summarize its output — its terminal output is the header, shown to the user directly.
 
-3. As each run completes: launch the chain's next run if one is due, then show the header again (step 2 command, with the completed run's index), then read its capture `<CHAIN_DIR>/run<K>.md` and assess its items into the wave doc: read the code each item talks about and check its claims rather than trust them; give each item a `**Claim**` verdict, justified at whatever length it deserves, then a `**Proposal**` naming what you would actually do; flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, record that instead of assessing it twice. Present assessments in item id order.
+3. As each run completes: launch the chain's next run if one is due, then show the header again (step 2 command, with the completed run's index), then read its capture `<CHAIN_DIR>/run<K>.md` and assess its items into the wave doc: read the code each item talks about and check its claims and its severity rather than trust them; give each item a `**Claim**` verdict and severity, justified at whatever length it deserves, then a `**Proposal**` naming what you would actually do; flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, record that instead of assessing it twice. Present assessments in item id order.
 
-4. When every chain is done, show the header once more, then write the wave doc's top part by running the step 2 command again with `--doc <WAVE_DOC>` appended — it prints nothing and prepends the top part to the doc — then open the wave doc for the user with `xdg-open <WAVE_DOC>`. It is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Follow with a one-line recap grouping every item by its `**Proposal**` verdict — apply, apply with changes, decline, your call — in the doc's own words rather than a fresh formulation.
+4. When every chain is done, show the header once more, then write the wave doc's top part by running the step 2 command again with `--doc <WAVE_DOC>` appended — it prints nothing and prepends the top part to the doc — then open the wave doc for the user with `xdg-open <WAVE_DOC>`. It is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Follow with a one-line recap grouping every item by its `**Proposal**` verdict — apply, apply with changes, decline, your call — in the doc's own words rather than a fresh formulation, each id carrying the severity its `**Claim**` line gave it.
 
 5. Let the user pick, item by item. A bare `apply` resolves against that item's `**Proposal**`, never against the reviewer's text:
 
