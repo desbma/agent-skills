@@ -105,7 +105,7 @@ The `**Decision**` line is added at annotation time, exactly one per item:
 
 4. When every chain is done, show the header once more, then open the wave doc for the user with `xdg-open <WAVE_DOC>`. It is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Follow with a one-line recap grouping every item: apply, apply with changes, decline, open — open being the calls that are genuinely the user's (collisions, tradeoffs).
 
-5. Let the user pick the items to apply, possibly partially or with changes.
+5. Let the user pick the items to apply, possibly partially or with changes. If their reply asks anything, answer it and change nothing, then wait again: the next message carries the picks, or more questions. Move to step 6 only on a reply that asks nothing.
 
 6. Apply the picked items in canonical domain order — correctness, readability, tests, docs. When two picked items collide, apply the correctness one first and adapt the other to the resulting code. Describe your changes so the user can review them.
 
