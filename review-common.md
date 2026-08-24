@@ -43,8 +43,16 @@ Report at most about 10 items. Report fewer, or none at all, if that is all the 
 For each item:
 
 - give it a number, so it can be referenced unambiguously
-- open it with its severity on its own line, `**Severity**: critical`, `**Severity**: major` or `**Severity**: minor`
+- open it with a title line: a bold title of a few words naming the item, then an em dash and the code it bears on
+
+  ```markdown
+  **Make the shared run timestamp timezone-independent** — `tests/support.py:18-19`
+  ```
+
+- put the severity on the line below the title, alone: `**Severity**: critical`, `**Severity**: major` or `**Severity**: minor`
 - show code snippets for the suggested change; when the item rewrites existing code, showing it as a before/after pair is encouraged, as it reads better than the proposed code alone — use it where it helps, not for items that only add code
+
+The references save the reader a search: the file and the lines the item turns on, one per place when it spans several. An item with no definite site — documentation a change never wrote, a pattern spread across the revision — carries the title alone, without the em dash.
 
 Severity rates the consequence of leaving the item unfixed — how bad it is, and how readily it is reached. It rates neither the effort of fixing it nor how strongly you believe the item is right:
 

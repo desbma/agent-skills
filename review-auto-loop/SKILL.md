@@ -72,6 +72,8 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 ```markdown
 ### C7 (run 1, item 3)
 
+> **<the item's title>** — `<file>:<lines>`
+>
 > **Severity**: critical | major | minor
 >
 > <the rest of the item, reproduced faithfully from the raw file>
