@@ -30,7 +30,7 @@ Focus on the current diff, but do not limit the review to the changed code; rela
 
 ## Previous reviews
 
-The exchange dir may already contain reviews of the same revision, from a previous run of this skill or from another review domain, as markdown files named `review-<REVIEW_REVISION>-*.md`. Read them all before starting.
+The review dir may already contain reviews of the same revision, from a previous run of this skill or from another review domain, as markdown files named `<REVIEW_REVISION>-wave*.md`. Read them all before starting.
 
 Each item of a previous review may be annotated with the decision the user made about it: applied, applied with changes, or declined. Do not raise again an item that appears in a previous review, whether or not it carries a decision yet, and whatever the decision was.
 

@@ -56,12 +56,12 @@ jj log -r <JJ_REVISION> --no-graph -T 'change_id.short(8)'
 
 Its output is `<REVIEW_REVISION>`, a per-change identifier stable across amends, repo growth, and jj config. Use it only in file names, never as a jj revision.
 
-The exchange dir holds, per reviewed change:
+The review dir holds, per reviewed change:
 
-- Wave docs `review-<REVIEW_REVISION>-wave<W>-<DATETIME>.md` — one per wave, where `<W>` is the one-based wave number and `<DATETIME>` the wave's start date and time in the `YYYYMMDDHHMM` format. Each carries the wave's items reproduced faithfully, their assessment, and the user's decisions.
-- Chain dirs `review-<REVIEW_REVISION>-wave<W>-<domain>/` — one per chain, holding its captures `run<K>.md`, where `<K>` is the run's one-based position in the chain. Captures are reviewer stdout: never annotated, and empty until their run completes — an empty file is an in-flight run. A chain dir belongs to its reviews: never write anything in it, it only ever holds the captures.
+- Wave docs `<REVIEW_REVISION>-wave<W>-<DATETIME>.md` — one per wave, where `<W>` is the one-based wave number and `<DATETIME>` the wave's start date and time in the `YYYYMMDDHHMM` format. Each carries the wave's items reproduced faithfully, their assessment, and the user's decisions.
+- Chain dirs `<REVIEW_REVISION>-wave<W>-<domain>/` — one per chain, holding its captures `run<K>.md`, where `<K>` is the run's one-based position in the chain. Captures are reviewer stdout: never annotated, and empty until their run completes — an empty file is an in-flight run. A chain dir belongs to its reviews: never write anything in it, it only ever holds the captures.
 
-If wave docs for the change already exist, the loop resumes from them: the wave number, the item counters and the past decisions all derive from the exchange dir.
+If wave docs for the change already exist, the loop resumes from them: the wave number, the item counters and the past decisions all derive from the review dir.
 
 ## Wave doc
 
@@ -129,7 +129,7 @@ Taking the proposal as offered maps verdict for verdict: `apply` to `applied`, `
 2. Show the header by running the `generate-header` script next to this file, from the repository root:
 
    ```bash
-   <SKILL_DIR>/generate-header <JJ_REVISION> <EXCHANGE_DIR> <W> <RUN> <PHASE> correctness=N readability=N tests=N docs=N
+   <SKILL_DIR>/generate-header <JJ_REVISION> <REVIEW_DIR> <W> <RUN> <PHASE> correctness=N readability=N tests=N docs=N
    ```
 
    `<RUN>` is the run the display announces: `1` at wave launch, the just-completed run's index on later displays. `<PHASE>` is `A` or `B`. The config values are the wave's effective caps.

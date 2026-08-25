@@ -78,8 +78,8 @@ def raw_item_count(text: str) -> int:
     return max(numbers, default=0)
 
 
-def scan_exchange(
-    exchange_dir: Path, rev: str
+def scan_review_dir(
+    review_dir: Path, rev: str
 ) -> tuple[
     dict[int, Path], dict[tuple[int, str], list[int]], set[tuple[int, str, int]]
 ]:
@@ -87,8 +87,9 @@ def scan_exchange(
     docs: dict[int, Path] = {}
     runs: dict[tuple[int, str], dict[int, int]] = {}
     running: set[tuple[int, str, int]] = set()
-    prefix = f"review-{rev}-"
-    for entry in sorted(exchange_dir.glob(f"{prefix}*")):
+    prefix = f"{rev}-"
+    # the wave component keeps the user's own review of the change out of the scan
+    for entry in sorted(review_dir.glob(f"{prefix}wave*")):
         name = entry.name.removeprefix(prefix)
         if entry.is_file() and (doc := DOC_NAME.fullmatch(name)):
             wave = int(doc.group(1))
@@ -113,7 +114,7 @@ def scan_exchange(
                 else:
                     running.add((key[0], key[1], int(match.group(1))))
         else:
-            raise SystemExit(f"Unexpected entry in exchange dir: {entry.name}")
+            raise SystemExit(f"Unexpected entry in review dir: {entry.name}")
     counts: dict[tuple[int, str], list[int]] = {}
     for key, by_run in runs.items():
         if sorted(by_run) != list(range(1, len(by_run) + 1)):
@@ -295,7 +296,7 @@ def render_markdown(
 
 def write_doc(path: Path, rev: str, wave: int, top: list[str]) -> None:
     """Prepend the generated top part to the wave doc, keeping its existing content."""
-    name = DOC_NAME.fullmatch(path.name.removeprefix(f"review-{rev}-"))
+    name = DOC_NAME.fullmatch(path.name.removeprefix(f"{rev}-"))
     if name is None or int(name.group(1)) != wave:
         raise SystemExit(f"Not the wave {wave} doc for this change: {path.name}")
     body = path.read_text().lstrip("\n") if path.exists() else ""
@@ -310,7 +311,7 @@ def main() -> None:
         description="Print the framed header for a review wave."
     )
     parser.add_argument("revision", help="The reviewed Jujutsu revision")
-    parser.add_argument("exchange_dir", help="Directory holding the review files")
+    parser.add_argument("review_dir", help="Directory holding the review files")
     parser.add_argument("wave", type=int, help="Current wave number")
     parser.add_argument("run", type=int, help="Run index announced by this display")
     parser.add_argument(
@@ -332,7 +333,7 @@ def main() -> None:
         parser.error("Both domains of the phase are excluded by the config")
 
     rev = review_revision(args.revision)
-    docs, raw, running = scan_exchange(Path(args.exchange_dir), rev)
+    docs, raw, running = scan_review_dir(Path(args.review_dir), rev)
     if any(wave > args.wave for wave in docs):
         raise SystemExit("Wave docs exist beyond the current wave")
     if any(wave > args.wave for wave, _ in raw) or any(
