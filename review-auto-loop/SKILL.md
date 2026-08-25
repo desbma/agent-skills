@@ -25,7 +25,7 @@ Each domain maps to a review skill, an item id prefix, and a default cap on chai
 - `tests` → `review-tests`, prefix `T`, cap 1
 - `docs` → `review-docs`, prefix `D`, cap 1
 
-The correctness and readability caps are the same value, derived once at the start of the loop from the size of the revision's diff — the sum of the insertions and deletions on the last line of:
+The correctness and readability caps are the same value, derived once at the start of the loop from the number of lines the revision adds — the insertion count on the last line of:
 
 ```bash
 jj diff -r <JJ_REVISION> --stat | tail -1
