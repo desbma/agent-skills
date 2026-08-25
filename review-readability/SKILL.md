@@ -47,7 +47,13 @@ The work of updating tests is never an argument against a simplification: if cod
 
 ## Additional instructions
 
-Give an estimate of the line count delta for each change, and rank the changes that remove the most lines first.
+Close each item with its estimated line count delta, alone on the item's last line, after any code snippet:
+
+```markdown
+**Estimated delta**: -8 lines
+```
+
+The estimate covers everything the item asks for, tests included, and carries its sign: `-8 lines`, `+3 lines`, `0 lines`. Rank the items that remove the most lines first.
 
 Anchor severity to what the code costs whoever reads it next: `major` for a shape that actively misleads — a name or a pattern that suggests behavior the code does not have, or density enough to hide a defect from a reader looking for one; `minor` for everything else, including most line count savings. Readability has no `critical`: code that merely reads badly still runs.
 
