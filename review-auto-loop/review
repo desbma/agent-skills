@@ -1,0 +1,1063 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = ["tabulate"]
+# ///
+"""Build and maintain the wave report of a review-auto-loop wave."""
+
+import argparse
+import collections
+import collections.abc
+import dataclasses
+import enum
+import re
+import subprocess
+import sys
+import textwrap
+import time
+from pathlib import Path
+
+import tabulate
+
+tabulate.MIN_PADDING = 0  # ty: ignore[invalid-assignment]
+
+DOMAIN_NAMES = ("correctness", "readability", "tests", "docs")
+PREFIX_TO_DOMAIN = {"C": "correctness", "R": "readability", "T": "tests", "D": "docs"}
+PHASE_DOMAINS = {"A": ("correctness", "readability"), "B": ("tests", "docs")}
+RUNNING_STR = "▶ running"
+GRID_FORMAT = tabulate.TableFormat(
+    lineabove=None,
+    linebelowheader=tabulate.Line("", "─", "┼", ""),
+    linebetweenrows=None,
+    linebelow=None,
+    headerrow=tabulate.DataRow("", "│", ""),
+    datarow=tabulate.DataRow("", "│", ""),
+    padding=1,
+    with_header_hide=None,
+)
+
+REPORT_FILENAME_RE = re.compile(r"([a-z]{8})-wave(\d+)-(\d{12})\.md")
+CHAIN_DIRNAME_RE = re.compile(r"wave(\d+)-([a-z]+)")
+CAPTURE_FILENAME_RE = re.compile(r"run(\d+)\.md")
+RUNNING_SUFFIX = ".running"
+METADATA_RE = re.compile(r"<!-- review: ((?:\w+=\S+ ?)+)-->\s*$")
+
+DOMAIN_HEADING_RE = re.compile(r"## (\w+)\s*$")
+ITEM_HEADING_RE = re.compile(r"### ([CRTD])(\d+) \(run (\d+), item (\d+)\)\s*$")
+CLAIM_RE = re.compile(
+    r"\*\*Claim\*\*: (holds|partly holds|does not hold)(?:, (critical|major|minor))?\s*$"
+)
+PROPOSAL_RE = re.compile(
+    r"\*\*Proposal\*\*: (apply with changes|apply|decline|your call)(?: — |:?\s*$)"
+)
+DECISION_RE = re.compile(r"\*\*Decision\*\*: (applied with changes|applied|declined)")
+
+REVIEWER_ITEM_RE = re.compile(r"\s{0,3}(?:#{1,6}\s+)?(\d+)[.)]\s")
+ITEM_TITLE_RE = re.compile(r"\*\*[^*]+\*\*")
+ITEM_SEVERITY_RE = re.compile(r"\*\*Severity\*\*: (critical|major|minor)\s*$")
+ITEM_DELTA_RE = re.compile(r"\*\*Estimated delta\*\*: \S")
+FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})")
+
+ITEM_ID_OR_SPAN_RE = re.compile(
+    r"(?P<code>(?P<ticks>`+).*?(?P=ticks))"
+    r"|(?P<angle><[^>\n]+>)"
+    r"|(?P<link>\[[^\]]*\]\([^)]*\))"
+    r"|(?<![0-9A-Za-z])(?P<id>[CRTD]\d+)(?![0-9A-Za-z])"
+)
+
+
+class Claim(enum.StrEnum):
+    """Verdict on whether a reviewer item's diagnosis survives reading the code."""
+
+    HOLDS = "holds"
+    PARTLY_HOLDS = "partly holds"
+    DOES_NOT_HOLD = "does not hold"
+
+
+class Severity(enum.StrEnum):
+    """Consequence of leaving an item unfixed."""
+
+    CRITICAL = "critical"
+    MAJOR = "major"
+    MINOR = "minor"
+
+
+class Proposal(enum.StrEnum):
+    """Course of action offered to the user for an item."""
+
+    APPLY = "apply"
+    APPLY_WITH_CHANGES = "apply with changes"
+    DECLINE = "decline"
+    YOUR_CALL = "your call"
+
+
+class Verdict(enum.StrEnum):
+    """What the user's pick produced for an item."""
+
+    APPLIED = "applied"
+    APPLIED_WITH_CHANGES = "applied with changes"
+    DECLINED = "declined"
+
+
+def token(value: str) -> str:
+    """Spell an enum value the way the command line takes it."""
+    return value.replace(" ", "-")
+
+
+def enum_type(
+    members: type[enum.StrEnum],
+) -> collections.abc.Callable[[str], enum.StrEnum]:
+    """Build an argparse converter from hyphenated tokens to members of an enum."""
+
+    def convert(value: str) -> enum.StrEnum:
+        for member in members:
+            if token(member.value) == value:
+                return member
+        choices = ", ".join(token(member.value) for member in members)
+        raise argparse.ArgumentTypeError(f"Not one of {choices}: {value}")
+
+    return convert
+
+
+def enum_metavar(members: type[enum.StrEnum]) -> str:
+    """Build the `--help` placeholder listing an enum's command line spellings."""
+    return "{" + ",".join(token(member.value) for member in members) + "}"
+
+
+@dataclasses.dataclass
+class ReportMetadata:
+    """Constants of one review wave."""
+
+    report: Path
+    review_dir: Path
+    change_id: str
+    short_change_id: str
+    wave: int
+    domain_caps: dict[str, int]
+
+    @property
+    def active(self) -> tuple[str, ...]:
+        """Domains of the wave its caps do not exclude."""
+        return tuple(domain for domain, cap in self.domain_caps.items() if cap)
+
+
+def positive_int(value: str) -> int:
+    """Convert a command line value to a one-based index."""
+    if not value.isdigit() or int(value) < 1:
+        raise argparse.ArgumentTypeError(f"Not a positive integer: {value}")
+    return int(value)
+
+
+def item_id(value: str) -> str:
+    """Convert a command line value to an item id, a domain prefix followed by its counter."""
+    if not re.fullmatch(r"[CRTD][1-9]\d*", value):
+        raise argparse.ArgumentTypeError(f"Not an item id: {value}")
+    return value
+
+
+def jj_output(args: list[str]) -> str:
+    """Run a jj command and return its standard output."""
+    out = subprocess.run(
+        ["jj", *args],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=None,
+        text=True,
+        check=True,
+    )
+    return out.stdout
+
+
+def resolve_change_id(revision: str) -> str:
+    """Resolve a revision to its full change identifier, stable across amends and repo growth."""
+    changes = jj_output(
+        ["log", "-r", revision, "--no-graph", "-T", 'change_id ++ "\n"']
+    ).splitlines()
+    if len(changes) != 1:
+        raise SystemExit("The reviewed revision must resolve to exactly one change")
+    return changes[0]
+
+
+def diff_summary(revision: str) -> str:
+    """Read the trailing `N files changed, ...` line of the revision's diff stat."""
+    return jj_output(["diff", "--stat", "-r", revision]).splitlines()[-1]
+
+
+def parse_domain_caps(pairs: list[str]) -> dict[str, int]:
+    """Read the per-domain caps of one phase from its two domain=N arguments."""
+    domain_caps: dict[str, int] = {}
+    for pair in pairs:
+        domain, sep, value = pair.partition("=")
+        if not sep or domain not in DOMAIN_NAMES or not value.isdigit():
+            raise SystemExit(f"Malformed cap argument: {pair}")
+        if domain in domain_caps:
+            raise SystemExit(f"Duplicate cap argument for {domain}")
+        domain_caps[domain] = int(value)
+    for domains in PHASE_DOMAINS.values():
+        if set(domain_caps) == set(domains):
+            if not any(domain_caps.values()):
+                raise SystemExit("Both domains of the phase are excluded")
+            return {domain: domain_caps[domain] for domain in domains}
+    raise SystemExit("The two domains must be the two domains of one phase")
+
+
+def config_text(domain_caps: dict[str, int]) -> str:
+    """Render the per-domain caps as one line, excluded domains shown as `=0`."""
+    return " · ".join(
+        f"{domain} ≤{cap}" if cap else f"{domain} =0"
+        for domain, cap in domain_caps.items()
+    )
+
+
+def read_metadata(report: Path) -> ReportMetadata:
+    """Read the wave constants of a wave report from its name and its leading comment."""
+    name = REPORT_FILENAME_RE.fullmatch(report.name)
+    if name is None:
+        raise SystemExit(f"Not a wave report name: {report.name}")
+    if not report.is_file():
+        raise SystemExit(f"No such wave report: {report}")
+    comment = METADATA_RE.fullmatch(report.read_text().splitlines()[0])
+    if comment is None:
+        raise SystemExit(f"Wave report has no review comment: {report.name}")
+    fields = dict(field.split("=", 1) for field in comment.group(1).split())
+    domain_caps = parse_domain_caps(
+        [f"{domain}={fields[domain]}" for domain in DOMAIN_NAMES if domain in fields]
+    )
+    if fields.get("wave") != name.group(2) or fields.get("change_id", "")[
+        :8
+    ] != name.group(1):
+        raise SystemExit(
+            f"Review comment disagrees with the report name: {report.name}"
+        )
+    return ReportMetadata(
+        report=report,
+        review_dir=report.parent,
+        short_change_id=name.group(1),
+        change_id=fields["change_id"],
+        wave=int(name.group(2)),
+        domain_caps=domain_caps,
+    )
+
+
+def outside_fences(lines: list[str]) -> list[bool]:
+    """Mark the lines sitting outside every code fence, the fence lines counting as inside."""
+    outside: list[bool] = []
+    marker = ""
+    for line in lines:
+        fence = FENCE_RE.match(line)
+        opening = "" if fence is None else fence.group(1)
+        outside.append(not marker and not opening)
+        if not marker:
+            marker = opening
+        elif opening[:1] == marker[0] and len(opening) >= len(marker):
+            marker = ""
+    return outside
+
+
+def reviewer_item_spans(text: str) -> dict[int, tuple[int, int]]:
+    """Locate the line span of each top-level item of a reviewer capture, keyed by its number."""
+    lines = text.splitlines()
+    starts: dict[int, int] = {}
+    indent: int | None = None
+    for index, (line, outside) in enumerate(zip(lines, outside_fences(lines))):
+        match = REVIEWER_ITEM_RE.match(line) if outside else None
+        if match is None:
+            continue
+        if indent is None:
+            indent = len(line) - len(line.lstrip())
+        elif len(line) - len(line.lstrip()) != indent:
+            continue
+        number = int(match.group(1))
+        if number in starts:
+            raise SystemExit(f"Reviewer item {number} appears twice")
+        starts[number] = index
+    if sorted(starts) != list(range(1, len(starts) + 1)):
+        raise SystemExit(f"Reviewer item numbers are not contiguous: {sorted(starts)}")
+    ordered = sorted(starts.items(), key=lambda item: item[1])
+    bounds = [start for _, start in ordered[1:]] + [len(lines)]
+    return {number: (start, end) for (number, start), end in zip(ordered, bounds)}
+
+
+def reviewer_item_count(text: str) -> int:
+    """Count the items of a reviewer capture."""
+    return max(reviewer_item_spans(text), default=0)
+
+
+def reviewer_item(capture: Path, number: int) -> str:
+    """Read one item of a reviewer capture, without its list marker."""
+    text = capture.read_text()
+    spans = reviewer_item_spans(text)
+    if number not in spans:
+        raise SystemExit(f"{capture.name} has no item {number}")
+    start, end = spans[number]
+    lines = text.splitlines()[start:end]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    marker = REVIEWER_ITEM_RE.match(lines[0])
+    assert marker is not None
+    head = lines[0][marker.end() :]
+    body = textwrap.dedent("\n".join(lines[1:]))
+    return "\n".join([head, *body.splitlines()])
+
+
+def check_reviewer_item(item: str, capture: Path, number: int) -> None:
+    """Fail unless the item carries the title, severity and delta the review format fixes."""
+    lines = item.splitlines()
+    where = f"Item {number} of {capture.name}"
+    if ITEM_TITLE_RE.match(lines[0]) is None:
+        raise SystemExit(f"{where} does not open with a bold title")
+    severities = [
+        index for index, line in enumerate(lines) if ITEM_SEVERITY_RE.match(line)
+    ]
+    if not severities:
+        raise SystemExit(f"{where} has no severity line")
+    if any(lines[index - 1].strip() for index in severities):
+        raise SystemExit(f"{where} does not put its severity in a paragraph of its own")
+    if not any(ITEM_DELTA_RE.match(line) for line in lines):
+        raise SystemExit(f"{where} has no estimated delta")
+
+
+def quote(item: str) -> list[str]:
+    """Render the item as blockquote lines, blank lines becoming a bare `>`."""
+    return [f"> {line}" if line.strip() else ">" for line in item.splitlines()]
+
+
+def splice(lines: list[str], at: int, block: list[str]) -> list[str]:
+    """Insert a block at a line index, separated from its neighbours by one blank line."""
+    before, after = lines[:at], lines[at:]
+    while before and not before[-1].strip():
+        before.pop()
+    while after and not after[0].strip():
+        after.pop(0)
+    return before + ([""] if before else []) + block + ([""] + after if after else [])
+
+
+def heading_domain(line: str) -> str | None:
+    """Read the domain a `## Domain` section heading names, if the line is one."""
+    heading = DOMAIN_HEADING_RE.match(line)
+    if heading is None or heading.group(1).lower() not in DOMAIN_NAMES:
+        return None
+    return heading.group(1).lower()
+
+
+def is_item_boundary(line: str) -> bool:
+    """Tell whether the line is a heading the report generates, ending whatever precedes it."""
+    return ITEM_HEADING_RE.match(line) is not None or heading_domain(line) is not None
+
+
+def section_start(lines: list[str], domain: str) -> int | None:
+    """Locate a domain's section heading, if the report has one."""
+    for index, line in enumerate(lines):
+        if heading_domain(line) == domain:
+            return index
+    return None
+
+
+def insertion_point(lines: list[str], domain: str) -> tuple[int, bool]:
+    """Locate where the domain's next item goes, and whether its section heading is missing."""
+    start = section_start(lines, domain)
+    if start is not None:
+        for index in range(start + 1, len(lines)):
+            if heading_domain(lines[index]) is not None:
+                return index, False
+        return len(lines), False
+    for index, line in enumerate(lines):
+        other = heading_domain(line)
+        if other is not None and DOMAIN_NAMES.index(other) > DOMAIN_NAMES.index(domain):
+            return index, True
+    return len(lines), True
+
+
+def item_span(lines: list[str], identifier: str) -> tuple[int, int]:
+    """Locate an item's line span, from its heading to the next generated heading."""
+    for index, line in enumerate(lines):
+        heading = ITEM_HEADING_RE.match(line)
+        if heading is None or heading.group(1) + heading.group(2) != identifier:
+            continue
+        for end in range(index + 1, len(lines)):
+            if is_item_boundary(lines[end]):
+                return index, end
+        return index, len(lines)
+    raise SystemExit(f"No item {identifier} in the wave report")
+
+
+def slug(heading: str) -> str:
+    """Derive the anchor a markdown renderer gives a heading's text."""
+    return re.sub(r"[^\w\- ]", "", heading.lower()).strip().replace(" ", "-")
+
+
+def item_headings(report: Path) -> dict[str, str]:
+    """Collect the anchor of each item of a wave report, keyed by item id."""
+    anchors: dict[str, str] = {}
+    for line in report.read_text().splitlines():
+        if heading := ITEM_HEADING_RE.match(line):
+            anchors[heading.group(1) + heading.group(2)] = slug(
+                line.removeprefix("### ")
+            )
+    return anchors
+
+
+def anchor_targets(metadata: ReportMetadata) -> dict[str, str]:
+    """Collect the link target of every item of the change, relative to the current wave report."""
+    targets: dict[str, str] = {}
+    for report in sorted(
+        metadata.review_dir.glob(f"{metadata.short_change_id}-wave*.md")
+    ):
+        prefix = "" if report == metadata.report else report.name
+        for identifier, anchor in item_headings(report).items():
+            targets[identifier] = f"{prefix}#{anchor}"
+    return targets
+
+
+def linkify(lines: list[str], targets: dict[str, str]) -> list[str]:
+    """Turn item ids mentioned in the assessments into links to their headings."""
+
+    def replace(match: re.Match[str]) -> str:
+        identifier = match.group("id")
+        if identifier is None or identifier not in targets:
+            return match.group(0)
+        return f"[{identifier}]({targets[identifier]})"
+
+    return [
+        line
+        if not outside or line.startswith((">", "#", "<!--", "- ["))
+        else ITEM_ID_OR_SPAN_RE.sub(replace, line)
+        for line, outside in zip(lines, outside_fences(lines))
+    ]
+
+
+def scan_review_dir(
+    review_dir: Path, short_change_id: str
+) -> tuple[dict[int, Path], dict[tuple[int, str], list[int | None]]]:
+    """Scan the review dir for the wave reports, and the item count of each capture per chain in run order, an in-flight run counting as None."""
+    reports: dict[int, Path] = {}
+    runs: dict[tuple[int, str], dict[int, int | None]] = {}
+    prefix = f"{short_change_id}-"
+    # the wave component keeps the user's own review of the change out of the scan
+    for entry in sorted(review_dir.glob(f"{prefix}wave*")):
+        name = entry.name.removeprefix(prefix)
+        if entry.is_file() and (report := REPORT_FILENAME_RE.fullmatch(entry.name)):
+            wave = int(report.group(2))
+            if wave in reports:
+                raise SystemExit(f"Duplicate wave reports for wave {wave}")
+            reports[wave] = entry
+        elif (
+            entry.is_dir()
+            and (chain := CHAIN_DIRNAME_RE.fullmatch(name))
+            and chain.group(2) in DOMAIN_NAMES
+        ):
+            key = (int(chain.group(1)), chain.group(2))
+            for capture in sorted(entry.iterdir()):
+                in_flight = capture.name.endswith(RUNNING_SUFFIX)
+                match = CAPTURE_FILENAME_RE.fullmatch(
+                    capture.name.removesuffix(RUNNING_SUFFIX)
+                )
+                if match is None:
+                    raise SystemExit(f"Unexpected file in {entry.name}: {capture.name}")
+                runs.setdefault(key, {})[int(match.group(1))] = (
+                    None if in_flight else reviewer_item_count(capture.read_text())
+                )
+        else:
+            raise SystemExit(f"Unexpected entry in review dir: {entry.name}")
+    counts: dict[tuple[int, str], list[int | None]] = {}
+    for key, by_run in runs.items():
+        if sorted(by_run) != list(range(1, len(by_run) + 1)):
+            raise SystemExit(f"Non-contiguous runs for wave {key[0]} {key[1]}")
+        ordered = [by_run[run] for run in range(1, len(by_run) + 1)]
+        if any(found is None for found in ordered[:-1]):
+            raise SystemExit(
+                f"In-flight capture before the end of wave {key[0]} {key[1]}"
+            )
+        counts[key] = ordered
+    return reports, counts
+
+
+def decided_counts(report: Path) -> dict[tuple[str, int], list[int]]:
+    """Count [findings, applied, applied with changes] per (domain, run) of a wave report."""
+    counts: dict[tuple[str, int], list[int]] = {}
+    pending: str | None = None
+    key = ("", 0)
+    for line in report.read_text().splitlines():
+        if heading := ITEM_HEADING_RE.match(line):
+            if pending is not None:
+                raise SystemExit(f"Item {pending} in {report.name} has no decision")
+            pending = heading.group(1) + heading.group(2)
+            key = (PREFIX_TO_DOMAIN[heading.group(1)], int(heading.group(3)))
+            counts.setdefault(key, [0, 0, 0])[0] += 1
+        elif (decision := DECISION_RE.match(line)) and pending is not None:
+            if decision.group(1) == "applied":
+                counts[key][1] += 1
+            elif decision.group(1) == "applied with changes":
+                counts[key][2] += 1
+            pending = None
+    if pending is not None:
+        raise SystemExit(f"Item {pending} in {report.name} has no decision")
+    return counts
+
+
+def grid(
+    item_counts: dict[tuple[int, str], list[int | None]],
+    reports: dict[int, Path],
+    wave: int,
+    active: tuple[str, ...],
+) -> tuple[dict[int, int], dict[tuple[int, int, str], str]]:
+    """Build the row count per wave and the cell text per (wave, run, domain)."""
+    cells: dict[tuple[int, int, str], str] = {}
+    rows: dict[int, int] = {}
+    for past in range(1, wave):
+        report = reports.get(past)
+        if report is None:
+            raise SystemExit(f"Missing wave report for completed wave {past}")
+        counts = decided_counts(report)
+        for domain, run in counts:
+            if run > len(item_counts.get((past, domain), [])):
+                raise SystemExit(
+                    f"{report.name} references {domain} run {run} with no capture"
+                )
+        rows[past] = max(
+            len(item_counts.get((past, domain), [])) for domain in DOMAIN_NAMES
+        )
+        if rows[past] == 0:
+            raise SystemExit(f"No capture for completed wave {past}")
+        for domain in DOMAIN_NAMES:
+            for run in range(1, len(item_counts.get((past, domain), [])) + 1):
+                found, applied, changed = counts.get((domain, run), [0, 0, 0])
+                if found == 0:
+                    cells[(past, run, domain)] = "0"
+                elif changed:
+                    cells[(past, run, domain)] = f"{applied}+{changed}/{found}"
+                else:
+                    cells[(past, run, domain)] = f"{applied}/{found}"
+    rows[wave] = 1
+    for domain in active:
+        counts_w = item_counts.get((wave, domain), [])
+        for run, found in enumerate(counts_w, 1):
+            cells[(wave, run, domain)] = RUNNING_STR if found is None else str(found)
+        rows[wave] = max(rows[wave], len(counts_w))
+    return rows, cells
+
+
+@dataclasses.dataclass
+class WaveState:
+    """The run grid of a change, with the capture counts it was built from."""
+
+    rows: dict[int, int]
+    cells: dict[tuple[int, int, str], str]
+    total: int
+    item_counts: dict[tuple[int, str], list[int | None]]
+
+
+def render_grid(
+    state: WaveState, tablefmt: str | tabulate.TableFormat, separate_waves: bool
+) -> list[str]:
+    """Render the run grid as table lines: one row per run, one column per domain."""
+    body: list[list[str] | str] = []
+    for wave in sorted(state.rows):
+        if body and separate_waves:
+            body.append(tabulate.SEPARATING_LINE)
+        body.extend(
+            [
+                f"wave {wave} run {run}" if run == 1 else f"run {run}",
+                *(state.cells.get((wave, run, domain), "") for domain in DOMAIN_NAMES),
+            ]
+            for run in range(1, state.rows[wave] + 1)
+        )
+    return tabulate.tabulate(
+        body,
+        headers=("", *DOMAIN_NAMES),
+        tablefmt=tablefmt,
+        disable_numparse=True,
+        colalign=("right", *("center",) * len(DOMAIN_NAMES)),
+    ).splitlines()
+
+
+def render_markdown(
+    state: WaveState, metadata: ReportMetadata, summary: str
+) -> list[str]:
+    """Render the wave report's top part: title, status list, and the run grid as a markdown table."""
+    return [
+        f"# Review wave {metadata.wave} — {metadata.short_change_id}",
+        "",
+        f"- **Config**: {config_text(metadata.domain_caps)}",
+        f"- **Reviews**: {state.total} total",
+        f"- **Diff**: {summary}",
+        "",
+        *render_grid(state, "github", separate_waves=False),
+    ]
+
+
+def wave_state(metadata: ReportMetadata) -> WaveState:
+    """Build the run grid of the change and count the reviews it holds."""
+    reports, item_counts = scan_review_dir(
+        metadata.review_dir, metadata.short_change_id
+    )
+    if any(wave > metadata.wave for wave in reports):
+        raise SystemExit("Wave reports exist beyond the current wave")
+    for (wave, domain), counts in item_counts.items():
+        if wave > metadata.wave:
+            raise SystemExit("Captures exist beyond the current wave")
+        if wave == metadata.wave and domain not in metadata.active:
+            raise SystemExit(f"Captures exist for inactive domain {domain}")
+        if wave < metadata.wave and None in counts:
+            raise SystemExit(f"In-flight capture for past wave {wave}")
+    rows, cells = grid(item_counts, reports, metadata.wave, metadata.active)
+    return WaveState(
+        rows=rows,
+        cells=cells,
+        total=sum(len(counts) for counts in item_counts.values()),
+        item_counts=item_counts,
+    )
+
+
+def read_lines(report: Path) -> list[str]:
+    """Read the wave report's lines."""
+    return report.read_text().splitlines()
+
+
+def write_lines(report: Path, lines: list[str]) -> None:
+    """Replace the wave report with the given lines."""
+    report.write_text("\n".join(lines) + "\n")
+
+
+def cmd_init(args: argparse.Namespace) -> None:
+    """Create the wave report and the chain dirs of the wave's active domains."""
+    domain_caps = parse_domain_caps(args.domain_caps)
+    review_dir = Path(args.review_dir)
+    if not review_dir.is_dir():
+        raise SystemExit(f"No such review dir: {review_dir}")
+    change = resolve_change_id(args.revision)
+    short_change_id = change[:8]
+    existing = sorted(review_dir.glob(f"{short_change_id}-wave{args.wave}-*.md"))
+    if existing:
+        raise SystemExit(f"Wave {args.wave} already has a report: {existing[0].name}")
+    stamp = time.strftime("%Y%m%d%H%M")
+    report = review_dir / f"{short_change_id}-wave{args.wave}-{stamp}.md"
+    chains = {
+        domain: review_dir / f"{short_change_id}-wave{args.wave}-{domain}"
+        for domain, cap in domain_caps.items()
+        if cap
+    }
+    for chain in chains.values():
+        if chain.exists():
+            raise SystemExit(f"Chain dir already exists: {chain.name}")
+    fields = " ".join(f"{domain}={cap}" for domain, cap in domain_caps.items())
+    comment = f"<!-- review: change_id={change} wave={args.wave} {fields} -->"
+    write_lines(report, [comment])
+    print(report)
+    for domain, chain in chains.items():
+        chain.mkdir()
+        print(f"{domain} {chain}")
+
+
+def cmd_header_show(args: argparse.Namespace) -> None:
+    """Print the framed wave header."""
+    metadata = read_metadata(args.report)
+    state = wave_state(metadata)
+    title = f" Wave {metadata.wave}, run {args.run} — {state.total} total reviews"
+    config = " Wave config: " + config_text(metadata.domain_caps)
+    stat = f" {diff_summary(metadata.change_id)}"
+    table = render_grid(state, GRID_FORMAT, separate_waves=True)
+    width = max(len(line) for line in (title, config, *table, stat))
+    rule = "═" * width
+    for line in (rule, title, config, stat, rule, *table, rule):
+        print(line)
+
+
+def next_item_id(metadata: ReportMetadata, prefix: str) -> str:
+    """Allocate the id of the domain's next item, its counter continuous across the change."""
+    numbers = sorted(
+        int(identifier[1:])
+        for report in metadata.review_dir.glob(f"{metadata.short_change_id}-wave*.md")
+        for identifier in item_headings(report)
+        if identifier[0] == prefix
+    )
+    if numbers != list(range(1, len(numbers) + 1)):
+        raise SystemExit(f"Item ids of {PREFIX_TO_DOMAIN[prefix]} are not contiguous")
+    return f"{prefix}{len(numbers) + 1}"
+
+
+def cmd_item_add(args: argparse.Namespace) -> None:
+    """Quote a reviewer item into the wave report, under the heading of the id it allocates."""
+    metadata = read_metadata(args.report)
+    domain = PREFIX_TO_DOMAIN[args.prefix]
+    if domain not in metadata.active:
+        raise SystemExit(f"Domain {domain} is not active in this wave")
+    capture = (
+        metadata.review_dir
+        / f"{metadata.short_change_id}-wave{metadata.wave}-{domain}"
+        / f"run{args.run}.md"
+    )
+    if not capture.is_file():
+        raise SystemExit(f"No such capture: {capture}")
+    item = reviewer_item(capture, args.number)
+    check_reviewer_item(item, capture, args.number)
+    identifier = next_item_id(metadata, args.prefix)
+    heading = f"### {identifier} (run {args.run}, item {args.number})"
+    lines = read_lines(args.report)
+    at, missing = insertion_point(lines, domain)
+    block = ([f"## {domain.capitalize()}", ""] if missing else []) + [heading, ""]
+    write_lines(args.report, splice(lines, at, block + quote(item)))
+    print(heading)
+
+
+def prose(name: str) -> str:
+    """Read a prose argument from stdin."""
+    if sys.stdin.isatty():
+        raise SystemExit(f"The {name} comes from stdin")
+    value = sys.stdin.read().strip()
+    if not value:
+        raise SystemExit(f"The {name} is empty")
+    return value
+
+
+def proposal_lines(args: argparse.Namespace) -> list[str]:
+    """Render the proposal: its verdict, then the tail that verdict takes."""
+    if args.proposal is Proposal.APPLY:
+        return [f"**Proposal**: {args.proposal}"]
+    if args.proposal is not Proposal.YOUR_CALL:
+        tail = (
+            args.action if args.proposal is Proposal.APPLY_WITH_CHANGES else args.reason
+        )
+        return [f"**Proposal**: {args.proposal} — {tail}"]
+    options = [*args.option, *args.more]
+    return [
+        f"**Proposal**: {args.proposal}:",
+        "",
+        *(
+            f"- ({chr(ord('a') + index)}) {option}"
+            for index, option in enumerate(options)
+        ),
+    ]
+
+
+def cmd_item_assess(args: argparse.Namespace) -> None:
+    """Write the claim, its justification and the proposal below a quoted item."""
+    proposal = proposal_lines(args)
+    justification = prose("justification")
+
+    metadata = read_metadata(args.report)
+    lines = read_lines(args.report)
+    start, end = item_span(lines, args.id)
+    if any(DECISION_RE.match(line) for line in lines[start:end]):
+        raise SystemExit(f"Item {args.id} is already decided")
+    quote_start = next(
+        (index for index in range(start, end) if lines[index].startswith(">")), None
+    )
+    if quote_start is None:
+        raise SystemExit(f"Item {args.id} has no quoted item")
+    quote_end = quote_start
+    while quote_end < end and lines[quote_end].startswith(">"):
+        quote_end += 1
+    severity = "" if args.severity is None else f", {args.severity}"
+    block = [
+        f"**Claim**: {args.claim}{severity}",
+        "",
+        *justification.splitlines(),
+        "",
+        *proposal,
+    ]
+    kept = lines[:quote_end]
+    assessed = splice(kept, len(kept), linkify(block, anchor_targets(metadata)))
+    write_lines(args.report, assessed + ([""] + lines[end:] if lines[end:] else []))
+    print("\n".join(line for line in proposal if line))
+
+
+def cmd_item_decide(args: argparse.Namespace) -> None:
+    """Record the user's decision below an assessed item."""
+    text = prose("reason")
+    metadata = read_metadata(args.report)
+    lines = read_lines(args.report)
+    start, end = item_span(lines, args.id)
+    if not any(PROPOSAL_RE.match(line) for line in lines[start:end]):
+        raise SystemExit(f"Item {args.id} has no assessment")
+    decision = next(
+        (index for index in range(start, end) if DECISION_RE.match(lines[index])), end
+    )
+    reason = linkify(
+        [f"**Decision**: {args.verdict} — {text}"], anchor_targets(metadata)
+    )
+    kept = lines[:decision]
+    decided = splice(kept, len(kept), reason)
+    write_lines(args.report, decided + ([""] + lines[end:] if lines[end:] else []))
+
+
+@dataclasses.dataclass
+class IndexEntry:
+    """The index line of one item: its id, the reviewer's severity, and its assessment."""
+
+    identifier: str
+    anchor: str
+    reviewer_severity: str = ""
+    claim: str = ""
+    severity: str = ""
+    proposal: str = ""
+
+    def line(self) -> str:
+        """Render the entry as one item line of the index, its whole text linking to the item."""
+        moved = "" if self.severity == self.reviewer_severity else self.severity
+        assessment = (self.claim, moved, self.proposal)
+        fields = (
+            self.identifier,
+            self.reviewer_severity,
+            ", ".join(part for part in assessment if part),
+        )
+        text = " / ".join(field for field in fields if field)
+        return f"  - [{text}](#{self.anchor})"
+
+
+def index_lines(lines: list[str]) -> list[str]:
+    """Build the item index: the items of each domain, nested under its name."""
+    rows: list[str | IndexEntry] = []
+    entry: IndexEntry | None = None
+    for line in lines:
+        if (domain := heading_domain(line)) is not None:
+            rows.append(f"- {domain.capitalize()}")
+        elif item := ITEM_HEADING_RE.match(line):
+            identifier = item.group(1) + item.group(2)
+            entry = IndexEntry(identifier, slug(line.removeprefix("### ")))
+            rows.append(entry)
+        elif entry is None:
+            continue
+        elif (severity := ITEM_SEVERITY_RE.match(line.removeprefix("> "))) and (
+            not entry.reviewer_severity
+        ):
+            entry.reviewer_severity = severity.group(1)
+        elif claim := CLAIM_RE.match(line):
+            entry.claim, entry.severity = claim.group(1), claim.group(2) or ""
+        elif proposal := PROPOSAL_RE.match(line):
+            entry.proposal = proposal.group(1)
+    return [row if isinstance(row, str) else row.line() for row in rows]
+
+
+def recap_lines(lines: list[str]) -> list[str]:
+    """Build one line per proposal verdict, listing the items that carry it with their severity."""
+    groups: dict[str, list[str]] = {proposal: [] for proposal in Proposal}
+    identifier, severity = "", ""
+    for line in lines:
+        if heading := ITEM_HEADING_RE.match(line):
+            identifier, severity = heading.group(1) + heading.group(2), ""
+        elif claim := CLAIM_RE.match(line):
+            severity = claim.group(2) or ""
+        elif proposal := PROPOSAL_RE.match(line):
+            label = f"{identifier} ({severity})" if severity else identifier
+            groups[proposal.group(1)].append(label)
+    return [
+        f"{proposal}: {', '.join(items)}" for proposal, items in groups.items() if items
+    ]
+
+
+def check_chains_complete(metadata: ReportMetadata, state: WaveState) -> None:
+    """Fail unless every chain of the wave has run to its end."""
+    for domain in metadata.active:
+        counts = state.item_counts.get((metadata.wave, domain), [])
+        cap = metadata.domain_caps[domain]
+        if not counts:
+            raise SystemExit(f"Chain {domain} has not run")
+        if None in counts:
+            raise SystemExit(f"Chain {domain} still has a run in flight")
+        if len(counts) > cap:
+            raise SystemExit(f"Chain {domain} ran past its cap of {cap}")
+        if counts[-1] and len(counts) < cap:
+            raise SystemExit(f"Chain {domain} is due another run")
+
+
+def check_items_complete(
+    metadata: ReportMetadata, state: WaveState, body: list[str]
+) -> None:
+    """Fail unless every item of the wave's captures is in the report once, assessed."""
+    captured = collections.Counter(
+        {
+            (domain, run): found
+            for (wave, domain), counts in state.item_counts.items()
+            if wave == metadata.wave
+            for run, found in enumerate(counts, 1)
+            if found
+        }
+    )
+    written: collections.Counter[tuple[str, int]] = collections.Counter()
+    assessments: dict[str, list[int]] = {}
+    identifier = ""
+    for line in body:
+        if heading := ITEM_HEADING_RE.match(line):
+            identifier = heading.group(1) + heading.group(2)
+            written[(PREFIX_TO_DOMAIN[heading.group(1)], int(heading.group(3)))] += 1
+            assessments[identifier] = [0, 0]
+        elif not identifier:
+            continue
+        elif CLAIM_RE.match(line):
+            assessments[identifier][0] += 1
+        elif PROPOSAL_RE.match(line):
+            assessments[identifier][1] += 1
+    if written != captured:
+        raise SystemExit(
+            "The report does not hold every captured item exactly once: "
+            f"{dict(sorted(written.items()))} against {dict(sorted(captured.items()))}"
+        )
+    for identifier, (claims, proposals) in assessments.items():
+        if (claims, proposals) != (1, 1):
+            raise SystemExit(f"Item {identifier} has no single claim and proposal")
+
+
+def report_is_formatted(lines: list[str]) -> bool:
+    """Tell whether the report already carries its generated top part."""
+    first = next((line for line in lines[1:] if line.strip()), "")
+    return first.startswith("# Review wave ")
+
+
+def cmd_report_format(args: argparse.Namespace) -> None:
+    """Write the generated top part and item index over the ones the report may hold."""
+    metadata = read_metadata(args.report)
+    lines = read_lines(args.report)
+    state = wave_state(metadata)
+    check_chains_complete(metadata, state)
+    start = 1
+    if report_is_formatted(lines):
+        start = next(
+            (
+                index
+                for index, line in enumerate(lines)
+                if heading_domain(line) is not None
+            ),
+            len(lines),
+        )
+    body = linkify(lines[start:], anchor_targets(metadata))
+    check_items_complete(metadata, state, body)
+    top = render_markdown(state, metadata, diff_summary(metadata.change_id))
+    index = index_lines(body)
+    section = ["", "## Items", ""] + index if index else []
+    write_lines(args.report, splice([lines[0]], 1, top + section + body))
+    for line in recap_lines(body):
+        print(line)
+
+
+def usage_form(parser: argparse.ArgumentParser) -> str:
+    """Render a parser's usage as one line, without its help flag."""
+    words = parser.format_usage().split()
+    return " ".join(word for word in words[1:] if word != "[-h]")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the command line parser, one subcommand per step of a review wave."""
+    parser = argparse.ArgumentParser(
+        description="Build the wave report of a review wave."
+    )
+    commands = parser.add_subparsers(required=True)
+
+    init = commands.add_parser("init", help="Create the wave report and its chain dirs")
+    init.add_argument("review_dir", help="Directory holding the review files")
+    init.add_argument("revision", help="The reviewed Jujutsu revision")
+    init.add_argument("wave", type=positive_int, help="Wave number")
+    init.add_argument(
+        "domain_caps",
+        nargs=2,
+        metavar="DOMAIN=CAP",
+        help="Caps of the phase's two domains",
+    )
+    init.set_defaults(func=cmd_init)
+
+    header = commands.add_parser("header", help="The wave's terminal header")
+    header_actions = header.add_subparsers(required=True)
+    show = header_actions.add_parser("show", help="Print the framed wave header")
+    show.add_argument("report", type=Path, help="The wave report")
+    show.add_argument("run", type=positive_int, help="Run index the display announces")
+    show.set_defaults(func=cmd_header_show)
+
+    item = commands.add_parser("item", help="The wave report's items")
+    item_actions = item.add_subparsers(required=True)
+
+    add = item_actions.add_parser(
+        "add", help="Quote a reviewer item into the wave report"
+    )
+    add.add_argument("report", type=Path, help="The wave report")
+    add.add_argument(
+        "prefix",
+        choices=tuple(PREFIX_TO_DOMAIN),
+        help="Domain prefix of the id to allocate",
+    )
+    add.add_argument(
+        "run", type=positive_int, help="Run of the chain the item comes from"
+    )
+    add.add_argument("number", type=positive_int, help="Item number within that run")
+    add.set_defaults(func=cmd_item_add)
+
+    assess = item_actions.add_parser(
+        "assess",
+        help="Assess a quoted item",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    assess.add_argument("report", type=Path, help="The wave report")
+    assess.add_argument("id", type=item_id, help="Id of the item")
+    assess.set_defaults(func=cmd_item_assess)
+    forms: list[str] = []
+    claims = assess.add_subparsers(
+        required=True,
+        metavar=enum_metavar(Claim),
+        help="Whether the item's diagnosis survives reading the code",
+    )
+    for claim in Claim:
+        rated = claims.add_parser(token(claim))
+        rated.set_defaults(claim=claim)
+        if claim is Claim.DOES_NOT_HOLD:
+            rated.set_defaults(severity=None)
+        else:
+            rated.add_argument(
+                "severity",
+                type=enum_type(Severity),
+                metavar=enum_metavar(Severity),
+                help="Severity of what the claim leaves standing",
+            )
+        proposals = rated.add_subparsers(
+            required=True,
+            metavar=enum_metavar(Proposal),
+            help="Course of action offered to the user",
+        )
+        for proposal in Proposal:
+            offer = proposals.add_parser(token(proposal))
+            offer.set_defaults(proposal=proposal)
+            if proposal is Proposal.APPLY_WITH_CHANGES:
+                offer.add_argument(
+                    "action", metavar="ACTION", help="What to do instead"
+                )
+            elif proposal is Proposal.DECLINE:
+                offer.add_argument("reason", metavar="REASON", help="Why not")
+            elif proposal is Proposal.YOUR_CALL:
+                offer.add_argument(
+                    "option", nargs=2, metavar="OPTION", help="The two first options"
+                )
+                offer.add_argument(
+                    "more", nargs="*", metavar="OPTION", help="Any further option"
+                )
+            forms.append(usage_form(offer))
+    # argparse lists only the next layer of subcommands: a subtree deeper than
+    # one layer states its leaf forms here, a one-layer one needs no such block.
+    assess.epilog = "forms:\n" + "\n".join(f"  {form}" for form in forms)
+
+    decide = item_actions.add_parser("decide", help="Record the user's decision")
+    decide.add_argument("report", type=Path, help="The wave report")
+    decide.add_argument("id", type=item_id, help="Id of the item")
+    decide.add_argument(
+        "--verdict",
+        required=True,
+        type=enum_type(Verdict),
+        metavar=enum_metavar(Verdict),
+        help="What the user's pick produced",
+    )
+    decide.set_defaults(func=cmd_item_decide)
+
+    report = commands.add_parser("report", help="The wave report as a whole")
+    report_actions = report.add_subparsers(required=True)
+    fmt = report_actions.add_parser("format", help="Add the top part, index and links")
+    fmt.add_argument("report", type=Path, help="The wave report")
+    fmt.set_defaults(func=cmd_report_format)
+
+    return parser
+
+
+def main() -> None:
+    """Parse the command line and run the requested subcommand."""
+    args = build_parser().parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
