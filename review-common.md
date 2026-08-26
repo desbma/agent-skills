@@ -51,6 +51,11 @@ For each item:
 
 - put the severity on the line below the title, alone: `**Severity**: critical`, `**Severity**: major` or `**Severity**: minor`
 - show code snippets for the suggested change; when the item rewrites existing code, showing it as a before/after pair is encouraged, as it reads better than the proposed code alone — use it where it helps, not for items that only add code
+- close it with the estimated line count delta, on a line of its own after any code snippet
+
+  ```markdown
+  **Estimated delta**: -8 lines
+  ```
 
 The references save the reader a search: the file and the lines the item turns on, one per place when it spans several. An item with no definite site — documentation a change never wrote, a pattern spread across the revision — carries the title alone, without the em dash.
 
@@ -61,5 +66,7 @@ Severity rates the consequence of leaving the item unfixed — how bad it is, an
 - `minor` — a narrow or cosmetic consequence, or one only a maintainer pays
 
 Each domain anchors these levels to its own kind of consequence, and some domains have no reachable `critical`. Rate an item against those anchors, never against the other items of the review: a review that yields only minor items reports only minor items.
+
+The estimate covers everything the item asks for, tests included, and carries its sign: `-8 lines`, `+3 lines`, `0 lines`. A range, and a short qualifier saying where the lines go, are both fine: `+8 to 15 lines including a regression test`.
 
 Order items by decreasing impact.
