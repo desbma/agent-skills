@@ -110,7 +110,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    `<RUN>` is the run the display announces: `1` at wave launch, the just-completed run's index on later displays. Its terminal output is the header, shown to the user directly: do not reproduce or summarize it.
 
-3. As each run completes: launch the chain's next run if one is due, then show the header again (step 2 command, with the completed run's index), then read its capture `<CHAIN_DIR>/run<K>.md` and write its items into the wave report, in item order:
+3. As each run completes: read its capture `<CHAIN_DIR>/run<K>.md`, launch the chain's next run if one is due, then show the header again (step 2 command, with the completed run's index), then write its items into the wave report, in item order:
 
    ```bash
    <SKILL_DIR>/review item add <WAVE_REPORT> <PREFIX> <RUN> <N>
@@ -119,7 +119,15 @@ The decision is added once the user has picked, exactly one per item, its reason
    EOF
    ```
 
-   `<PREFIX>` is the domain's item id prefix — `C`, `R`, `T` or `D` — and `<N>` the item's number in the capture; `item add` allocates the id and prints the heading it wrote, which is where `<ID>` comes from. The assessment's arguments follow the verdicts: `holds` and `partly-holds` take the `<SEVERITY>`, `does-not-hold` takes none; then `apply` takes no `<TAIL>`, `apply-with-changes` and `decline` one text argument, `your-call` two or more. `item assess` echoes the proposal it wrote, lettering a `your-call`'s options in the order given: that letter is what a pick names. Assess it by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, say so instead of assessing it twice.
+   `<PREFIX>` is the domain's item id prefix — `C`, `R`, `T` or `D` — and `<N>` the item's number in the capture; `item add` allocates the id and prints the heading it wrote, which is where `<ID>` comes from. The assessment's arguments follow the verdicts: `holds` and `partly-holds` take the `<SEVERITY>` (`critical`, `major` or `minor`), `does-not-hold` takes none; then `apply` takes no `<TAIL>`, `apply-with-changes` and `decline` one text argument, `your-call` two or more. A `<TAIL>` is a command-line argument; only the justification comes from stdin:
+
+   ```bash
+   <SKILL_DIR>/review item assess <WAVE_REPORT> R2 partly-holds minor decline '<the tail>' <<'EOF'
+   <the justification>
+   EOF
+   ```
+
+   `item assess` echoes the proposal it wrote, lettering a `your-call`'s options in the order given: that letter is what a pick names. Assess it by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, say so instead of assessing it twice.
 
 4. When every chain is done, show the header once more, then write the report's top part, item index and links:
 
@@ -139,7 +147,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
 6. Apply the picked items in canonical domain order — correctness, readability, tests, docs. When two picked items collide, apply the correctness one first and adapt the other to the resulting code. Describe your changes so the user can review them.
 
-7. Record the decisions, one call per item:
+7. Record the decisions, one invocation per item:
 
    ```bash
    <SKILL_DIR>/review item decide <WAVE_REPORT> <ID> --verdict <VERDICT> <<'EOF'
@@ -155,7 +163,8 @@ The decision is added once the user has picked, exactly one per item, its reason
 
 ## Rules
 
-- `review header show` and `review report format` are run verbatim: no pipe, no redirection, no `head`/`tail`/`grep`, no output limit. Their output is for the user, not for you to digest, so its length is never a reason to trim it.
+- `review header show` and `review report format` are run verbatim: no pipe, no redirection, no `head`/`tail`/`grep`, no output limit, alone in their call. Their output is for the user, not for you to digest, so its length is never a reason to trim it.
+- Issue independent operations together rather than one per turn: several tool calls in one message, several `review` invocations in one shell call.
 - Never apply an item the user did not pick.
 - Apply each picked item completely: carry the change through every aspect it naturally touches, even ones another domain owns — a correctness fix ships with its test, and with the cleanup or documentation update the same change calls for. Never leave part of a change undone because a later wave would cover that aspect.
 - Never omit an item from the wave report, however wrong you think it is.
