@@ -789,6 +789,20 @@ class WaveTest(unittest.TestCase):
         self.assertEqual(lines[2], f"# Review wave 1 — {REV}")
         self.assertNotIn("## Items", lines)
 
+    def test_report_grid_is_right_aligned(self) -> None:
+        """Every column of the markdown grid carries a right-alignment marker."""
+        self.capture("correctness", 1, "No item to report.\n")
+        self.capture("readability", 1, "No item to report.\n")
+        self.run_cli("report", "format", self.report)
+        rule = next(
+            line
+            for line in self.report.read_text().splitlines()
+            if set(line) == {"|", "-", ":"}
+        )
+        cells = rule.strip("|").split("|")
+        self.assertEqual(len(cells), len(review.DOMAIN_NAMES) + 1)
+        self.assertTrue(all(cell.endswith(":") for cell in cells))
+
     def test_header_show(self) -> None:
         """The header frames the wave title, its config, the diff stat and the run grid."""
         self.capture("correctness", 1)

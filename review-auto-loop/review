@@ -567,7 +567,7 @@ def render_grid(
         headers=("", *DOMAIN_NAMES),
         tablefmt=tablefmt,
         disable_numparse=True,
-        colalign=("right", *("center",) * len(DOMAIN_NAMES)),
+        colalign=("right",) * (len(DOMAIN_NAMES) + 1),
     ).splitlines()
 
 
@@ -582,7 +582,7 @@ def render_markdown(
         f"- **Reviews**: {state.total} total",
         f"- **Diff**: {summary}",
         "",
-        *render_grid(state, "github", separate_waves=False),
+        *render_grid(state, "pipe", separate_waves=False),
     ]
 
 
