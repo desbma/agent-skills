@@ -685,8 +685,9 @@ class WaveTest(unittest.TestCase):
         recap = self.run_cli("report", "format", self.report)
         self.assertEqual(
             recap,
-            "apply: C1 (major)\napply with changes: C2 (major)\n"
-            "decline: R1\nyour call: R2 (minor)\n",
+            "4 items · 1 apply · 1 apply with changes · 1 decline · 1 your call\n\n"
+            "- apply: C1\n- apply with changes: C2\n"
+            "- decline: R1\n- your call: R2\n",
         )
         lines = self.report.read_text().splitlines()
         self.assertTrue(lines[0].startswith("<!-- review:"))
@@ -737,7 +738,7 @@ class WaveTest(unittest.TestCase):
         self.assess(second)
         self.assertEqual(
             self.run_cli("report", "format", self.report),
-            "apply: C1 (major), C2 (major)\n",
+            "2 items · 2 apply\n\n- apply: C1, C2\n",
         )
 
     def test_findings_on_the_cap_run_are_complete(self) -> None:
@@ -749,7 +750,7 @@ class WaveTest(unittest.TestCase):
         self.add_assessed("C", 2, 1)
         self.assertEqual(
             self.run_cli("report", "format", self.report),
-            "apply: C1 (major), C2 (major)\n",
+            "2 items · 2 apply\n\n- apply: C1, C2\n",
         )
 
     def test_an_excluded_domain_is_not_awaited(self) -> None:
@@ -788,6 +789,17 @@ class WaveTest(unittest.TestCase):
         lines = self.report.read_text().splitlines()
         self.assertEqual(lines[2], f"# Review wave 1 — {REV}")
         self.assertNotIn("## Items", lines)
+
+    def test_recap_counts_a_single_item(self) -> None:
+        """The item count of a one-item wave reads as a singular."""
+        self.capture("correctness", 1, ONE_ITEM)
+        self.capture("correctness", 2, "Nothing to report.\n")
+        self.capture("readability", 1, "Nothing to report.\n")
+        self.add_assessed("C", 1, 1)
+        self.assertEqual(
+            self.run_cli("report", "format", self.report),
+            "1 item · 1 apply\n\n- apply: C1\n",
+        )
 
     def test_report_grid_is_right_aligned(self) -> None:
         """Every column of the markdown grid carries a right-alignment marker."""

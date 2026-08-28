@@ -830,19 +830,23 @@ def index_lines(lines: list[str]) -> list[str]:
 
 
 def recap_lines(lines: list[str]) -> list[str]:
-    """Build one line per proposal verdict, listing the items that carry it with their severity."""
+    """Build the wave's item counts, then one bullet per proposal verdict listing the items that carry it."""
     groups: dict[str, list[str]] = {proposal: [] for proposal in Proposal}
-    identifier, severity = "", ""
+    identifier = ""
     for line in lines:
         if heading := ITEM_HEADING_RE.match(line):
-            identifier, severity = heading.group(1) + heading.group(2), ""
-        elif claim := CLAIM_RE.match(line):
-            severity = claim.group(2) or ""
+            identifier = heading.group(1) + heading.group(2)
         elif proposal := PROPOSAL_RE.match(line):
-            label = f"{identifier} ({severity})" if severity else identifier
-            groups[proposal.group(1)].append(label)
+            groups[proposal.group(1)].append(identifier)
+    carried = {proposal: items for proposal, items in groups.items() if items}
+    if not carried:
+        return []
+    total = sum(len(items) for items in carried.values())
+    counts = (f"{len(items)} {proposal}" for proposal, items in carried.items())
     return [
-        f"{proposal}: {', '.join(items)}" for proposal, items in groups.items() if items
+        " · ".join((f"{total} item{'' if total == 1 else 's'}", *counts)),
+        "",
+        *(f"- {proposal}: {', '.join(items)}" for proposal, items in carried.items()),
     ]
 
 
