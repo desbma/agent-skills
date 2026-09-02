@@ -18,6 +18,7 @@ Personal [coding agent skills](https://agentskills.io/).
 
 ## Content
 
+- [`handoff`](handoff/SKILL.md): Summarize the conversation into one self-contained document per divergent path.
 - [`implem-brake`](implem-brake/SKILL.md): Forbid the agent from touching project files until explicitly allowed again, to discuss a change without it jumping to implementation. Invoked manually with `on`/`off`.
 - [`review-auto-loop`](review-auto-loop/SKILL.md): Run waves of parallel chains of reviews with external reviewer agents, to balance thoroughness and speed. The user gets presented a report of all findings after each wave, each assessed by the main agent, and can choose which to apply.
 - Per-domain review skills (called by the `review-auto-loop` skill):
