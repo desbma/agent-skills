@@ -146,11 +146,11 @@ Skip this task if the local repository does not have GitHub actions files.
 Steps :
 
 - for each workflow in `https://github.com/desbma/cargo-template/tree/master/.github/workflows`, if it exists locally, compare them and consider updating the local version:
-  - if a job exists in the reference action, but does not make sense locally (MSRV check when we don't declare one locally) => ignore it
+  - if a job exists in the reference action, but does not make sense locally (MSRV check when the local project declares no MSRV) => ignore it
   - for the `release` workflow, only update jobs existing locally, do not add new ones
   - do not make changes that affect the output (ie. compilation toolchains, library packages installed), as it is highly project specific
   - ignore the `untemplate` line noise, it is an artifact of the `cargo-generate` use
-  - if a check is in the reference action, and not in the local one, or is more thorough in the reference (ie. runs Clippy on test code and we have tests) **and** it makes sense to use such command locally (for example it is not needed to run `cargo test --all-features` if local project has no features) => add it
+  - if a check is in the reference action, and not in the local one, or is more thorough in the reference (ie. runs Clippy on test code and the local project has tests) **and** it makes sense to use such command locally (for example it is not needed to run `cargo test --all-features` if local project has no features) => add it
 - run `pinact run -u -min-age 10` to update GitHub actions versions, and pin it with hashes
 
 ### Changelog template update
@@ -165,7 +165,7 @@ Skip this task if the current project has no `release` script in the root direct
 
 Compare the current `release` script file with the reference template at `https://github.com/desbma/cargo-template/blob/master/release`. Update the local version, ignoring obviously local-specific elements like:
 
-- changelog update if we have no changelog locally
+- changelog update if the local project has no changelog
 - different base version for the changelog
 - different version convention (ie. CalVer vs SemVer)
-- beta version naming replacements if we have no beta version locally
+- beta version naming replacements if the local project has no beta version
