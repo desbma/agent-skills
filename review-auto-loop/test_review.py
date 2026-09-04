@@ -146,40 +146,84 @@ class RawReviewTest(unittest.TestCase):
         """Every line takes the blockquote prefix, blank ones becoming a bare marker."""
         self.assertEqual(review.quote("a\n\nb"), ["> a", ">", "> b"])
 
+    def test_quote_code_spans_tags(self) -> None:
+        """A tag in the reviewer's prose is code-spanned, one inside a fence left alone."""
+        self.assertEqual(
+            review.quote("A <details> fold.\n\n```html\n<details>\n```"),
+            ["> A `<details>` fold.", ">", "> ```html", "> <details>", "> ```"],
+        )
 
-class LinkifyTest(unittest.TestCase):
-    """Turning item ids mentioned in prose into links."""
 
-    def linkify(self, line: str) -> str:
-        """The line after the link pass."""
-        return review.linkify([line], TARGETS)[0]
+class RenderProseTest(unittest.TestCase):
+    """Linking the item ids mentioned in prose, and code-spanning the tags it names."""
+
+    def render(self, line: str) -> str:
+        """The line after the prose pass."""
+        return review.render_prose([line], TARGETS)[0]
 
     def test_known_ids_become_links(self) -> None:
         """An id with a heading in the change links to it, across reports too."""
-        self.assertEqual(self.linkify("Same as C7."), "Same as [C7](#c7-run-2-item-1).")
-        self.assertEqual(self.linkify("See R2"), "See [R2](wave1.md#r2-run-1-item-2)")
+        self.assertEqual(self.render("Same as C7."), "Same as [C7](#c7-run-2-item-1).")
+        self.assertEqual(self.render("See R2"), "See [R2](wave1.md#r2-run-1-item-2)")
 
     def test_negatives(self) -> None:
         """Hex strings, longer ids, lowercase and unknown ids are left alone."""
         for line in ("5FC8D9", "C71 and C7x", "c7", "C9", "0xC7"):
-            self.assertEqual(self.linkify(line), line)
+            self.assertEqual(self.render(line), line)
 
     def test_protected_spans(self) -> None:
         """Quoted items, headings, code spans and existing links are left alone."""
         for line in (
             "> C7 as the reviewer wrote it",
+            "> a <details> fold, as the reviewer wrote it",
             "### C7 (run 2, item 1)",
             "the `C7` symbol",
             "the ``C7`` symbol",
+            "the `<details>` element",
             "at <https://example.test/C7>",
             "already [C7](#c7-run-2-item-1)",
+            "already [the `<details>` fold](#c7-run-2-item-1)",
         ):
-            self.assertEqual(self.linkify(line), line)
+            self.assertEqual(self.render(line), line)
+
+    def test_tags_become_code_spans(self) -> None:
+        """A tag the prose names is code-spanned, so the renderer displays it."""
+        self.assertEqual(
+            self.render("one closed <details> before the index"),
+            "one closed `<details>` before the index",
+        )
+        for line, rendered in (
+            ("</details>", "`</details>`"),
+            ("<br/>", "`<br/>`"),
+            ('<div class="x">', '`<div class="x">`'),
+            ("Vec<u8>", "Vec`<u8>`"),
+        ):
+            self.assertEqual(self.render(line), rendered)
+
+    def test_angle_spans_that_are_no_tags(self) -> None:
+        """An autolink, a bare comparison and the report's own comment are left alone."""
+        for line in (
+            "<user@example.test>",
+            "the <T: Clone> bound",
+            "a < b and c > d",
+            f"<!-- review: change_id={CHANGE_ID} wave=1 -->",
+        ):
+            self.assertEqual(self.render(line), line)
+
+    def test_a_spanned_tag_is_stable(self) -> None:
+        """A second pass leaves an already spanned tag alone."""
+        once = self.render("one closed <details> fold")
+        self.assertEqual(self.render(once), once)
 
     def test_fenced_block(self) -> None:
-        """Ids inside a fenced block are left alone, whatever the fence."""
+        """Ids and tags inside a fenced block are left alone, whatever the fence."""
         lines = ["```", "C7", "```", "~~~", "C7", "~~~", "````", "```", "C7", "````"]
-        self.assertEqual(review.linkify([*lines, "C7"], TARGETS), [*lines, LINKED])
+        self.assertEqual(review.render_prose([*lines, "C7"], TARGETS), [*lines, LINKED])
+        fenced = ["```html", "<details>", "```"]
+        self.assertEqual(
+            review.render_prose([*fenced, "<details>"], TARGETS),
+            [*fenced, "`<details>`"],
+        )
 
 
 class JjQueryTest(unittest.TestCase):
@@ -568,6 +612,21 @@ class WaveTest(unittest.TestCase):
             "**Proposal**: your call:\n\n- (a) split it\n- (b) leave it\n",
             self.report.read_text(),
         )
+
+    def test_assess_code_spans_a_tag_in_its_prose(self) -> None:
+        """A tag named in an option or a justification reaches the report as a code span."""
+        self.capture("correctness", 1)
+        self.assess(
+            self.add("C", 1, 1),
+            "give the pack one closed <details> fold",
+            "leave it out",
+            severity="minor",
+            proposal="your-call",
+            stdin="A <details> fold costs one line.",
+        )
+        text = self.report.read_text()
+        self.assertIn("A `<details>` fold costs one line.\n", text)
+        self.assertIn("- (a) give the pack one closed `<details>` fold\n", text)
 
     def test_decide(self) -> None:
         """A decision needs an assessment, reads stdin, and links the ids in its reason."""

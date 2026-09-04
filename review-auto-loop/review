@@ -58,8 +58,9 @@ ITEM_SEVERITY_RE = re.compile(r"\*\*Severity\*\*: (critical|major|minor)\s*$")
 ITEM_DELTA_RE = re.compile(r"\*\*Estimated delta\*\*: \S")
 FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})")
 
-ITEM_ID_OR_SPAN_RE = re.compile(
+PROSE_SPAN_RE = re.compile(
     r"(?P<code>(?P<ticks>`+).*?(?P=ticks))"
+    r"|(?P<tag></?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>)"
     r"|(?P<angle><[^>\n]+>)"
     r"|(?P<link>\[[^\]]*\]\([^)]*\))"
     r"|(?<![0-9A-Za-z])(?P<id>[CRTD]\d+)(?![0-9A-Za-z])"
@@ -318,8 +319,11 @@ def check_reviewer_item(item: str, capture: Path, number: int) -> None:
 
 
 def quote(item: str) -> list[str]:
-    """Render the item as blockquote lines, blank lines becoming a bare `>`."""
-    return [f"> {line}" if line.strip() else ">" for line in item.splitlines()]
+    """Render the item as blockquote lines, its tags code-spanned, blank lines becoming a bare `>`."""
+    return [
+        f"> {line}" if line.strip() else ">"
+        for line in render_prose(item.splitlines(), {})
+    ]
 
 
 def splice(lines: list[str], at: int, block: list[str]) -> list[str]:
@@ -409,10 +413,12 @@ def anchor_targets(metadata: ReportMetadata) -> dict[str, str]:
     return targets
 
 
-def linkify(lines: list[str], targets: dict[str, str]) -> list[str]:
-    """Turn item ids mentioned in the assessments into links to their headings."""
+def render_prose(lines: list[str], targets: dict[str, str]) -> list[str]:
+    """Link the item ids the prose mentions to their headings, and code-span the HTML tags it names."""
 
     def replace(match: re.Match[str]) -> str:
+        if (tag := match.group("tag")) is not None:
+            return f"`{tag}`"
         identifier = match.group("id")
         if identifier is None or identifier not in targets:
             return match.group(0)
@@ -421,7 +427,7 @@ def linkify(lines: list[str], targets: dict[str, str]) -> list[str]:
     return [
         line
         if not outside or line.startswith((">", "#", "<!--", "- ["))
-        else ITEM_ID_OR_SPAN_RE.sub(replace, line)
+        else PROSE_SPAN_RE.sub(replace, line)
         for line, outside in zip(lines, outside_fences(lines))
     ]
 
@@ -757,7 +763,7 @@ def cmd_item_assess(args: argparse.Namespace) -> None:
         *proposal,
     ]
     kept = lines[:quote_end]
-    assessed = splice(kept, len(kept), linkify(block, anchor_targets(metadata)))
+    assessed = splice(kept, len(kept), render_prose(block, anchor_targets(metadata)))
     write_lines(args.report, assessed + ([""] + lines[end:] if lines[end:] else []))
     print("\n".join(line for line in proposal if line))
 
@@ -773,7 +779,7 @@ def cmd_item_decide(args: argparse.Namespace) -> None:
     decision = next(
         (index for index in range(start, end) if DECISION_RE.match(lines[index])), end
     )
-    reason = linkify(
+    reason = render_prose(
         [f"**Decision**: {args.verdict} — {text}"], anchor_targets(metadata)
     )
     kept = lines[:decision]
@@ -924,7 +930,7 @@ def cmd_report_format(args: argparse.Namespace) -> None:
             ),
             len(lines),
         )
-    body = linkify(lines[start:], anchor_targets(metadata))
+    body = render_prose(lines[start:], anchor_targets(metadata))
     check_items_complete(metadata, state, body)
     top = render_markdown(state, metadata, diff_summary(metadata.change_id))
     index = index_lines(body)
