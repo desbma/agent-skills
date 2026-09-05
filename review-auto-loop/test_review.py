@@ -465,8 +465,7 @@ class WaveFixture(CliFixture):
     ) -> list[str]:
         """Import a run's items into the report and return the ids they were given."""
         target = self.report if report is None else report
-        out = self.run_cli("item", "import", target, domain, run)
-        return [line.split()[1] for line in out.splitlines()]
+        return self.run_cli("item", "import", target, domain, run).split()
 
     def assess(
         self,
@@ -617,11 +616,11 @@ class WaveTest(WaveFixture):
         self.assertIn(">", lines)
 
     def test_import_takes_the_whole_capture(self) -> None:
-        """Every item of the run lands in the report, under the heading of the id it took."""
+        """Every item of the run lands in the report, its id printed on a line of its own."""
         self.capture("correctness", 1)
         self.assertEqual(
             self.run_cli("item", "import", self.report, "correctness", 1).splitlines(),
-            ["### C1 (run 1, item 1)", "### C2 (run 1, item 2)"],
+            ["C1", "C2"],
         )
         self.capture("correctness", 2, ONE_ITEM)
         self.assertEqual(self.imported("correctness", 2), ["C3"])
@@ -647,9 +646,9 @@ class WaveTest(WaveFixture):
         self.assertNotIn("###", self.report.read_text())
 
     def test_assess_writes_the_claim_and_proposal(self) -> None:
-        """The assessment lands below the quote, with the justification between its two lines."""
+        """The assessment lands below the quote, with the justification between its two lines, and prints nothing."""
         self.capture("correctness", 1)
-        self.assess(
+        out = self.assess(
             self.imported("correctness")[0],
             "bound it in the caller",
             claim="partly-holds",
@@ -658,6 +657,7 @@ class WaveTest(WaveFixture):
             stdin="Only the retry path can overrun it.",
         )
         text = self.report.read_text()
+        self.assertEqual(out, "")
         self.assertIn(
             "**Claim**: partly holds, minor\n\nOnly the retry path can overrun it.\n\n"
             "**Proposal**: apply with changes — bound it in the caller\n",
@@ -766,19 +766,18 @@ class WaveTest(WaveFixture):
             self.assert_cli_error(*base, *extra, stdin="prose")
 
     def test_assess_your_call_renders_its_options(self) -> None:
-        """A your-call proposal spells its options out as a lettered list."""
+        """A your-call proposal spells its options out as a lettered list, echoed under the item id."""
         self.capture("correctness", 1)
+        identifier = self.imported("correctness")[0]
         out = self.assess(
-            self.imported("correctness")[0],
+            identifier,
             "split it",
             "leave it",
             severity="minor",
             proposal="your-call",
             stdin="Both are defensible.",
         )
-        self.assertEqual(
-            out, "**Proposal**: your call:\n- (a) split it\n- (b) leave it\n"
-        )
+        self.assertEqual(out, f"{identifier} (a) split it\n{identifier} (b) leave it\n")
         self.assertIn(
             "**Proposal**: your call:\n\n- (a) split it\n- (b) leave it\n",
             self.report.read_text(),
@@ -1320,10 +1319,9 @@ class WorkflowTest(CliFixture):
         for run, output in enumerate(outputs, start=1):
             self.review_run(report, domain, output)
             self.run_cli("header", "show", report, run)
-            for line in self.run_cli(
-                "item", "import", report, domain, run
-            ).splitlines():
-                identifiers.append(line.split()[1])
+            identifiers.extend(
+                self.run_cli("item", "import", report, domain, run).split()
+            )
         for identifier in identifiers:
             self.run_cli(
                 "item",

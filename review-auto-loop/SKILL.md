@@ -83,7 +83,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    EOF
    ```
 
-   `item import` quotes every item of the run into the report, in item order, and prints the heading it wrote for each, which is where `<ID>` comes from. The assessment's arguments follow the verdicts: `holds` and `partly-holds` take the `<SEVERITY>` (`critical`, `major` or `minor`), `does-not-hold` takes none; then `apply` takes no `<TAIL>`, `apply-with-changes` and `decline` one text argument, `your-call` two or more. A `<TAIL>` is a command-line argument; only the justification comes from stdin:
+   `item import` quotes every item of the run into the report, in item order, and prints the id it gave each, which is where `<ID>` comes from. The assessment's arguments follow the verdicts: `holds` and `partly-holds` take the `<SEVERITY>` (`critical`, `major` or `minor`), `does-not-hold` takes none; then `apply` takes no `<TAIL>`, `apply-with-changes` and `decline` one text argument, `your-call` two or more. A `<TAIL>` is a command-line argument; only the justification comes from stdin:
 
    ```bash
    <SKILL_DIR>/review item assess <WAVE_REPORT> R2 partly-holds minor decline '<the tail>' <<'EOF'
@@ -91,7 +91,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    EOF
    ```
 
-   `item assess` echoes the proposal it wrote, lettering a `your-call`'s options in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, say so instead of assessing it twice.
+   `item assess` echoes a `your-call`'s options under the item id, lettered in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, say so instead of assessing it twice.
 
 4. When every chain has ended, show the header once more, then write the report's top part, item index and links:
 

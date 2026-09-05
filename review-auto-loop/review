@@ -887,17 +887,15 @@ def cmd_item_import(args: argparse.Namespace) -> None:
         raise SystemExit(f"Run {args.run} of {args.domain} is already imported")
     check_capture(capture)
     for number, item in reviewer_items(capture.read_text()).items():
-        heading = (
-            f"### {next_item_id(metadata, prefix)} (run {args.run}, item {number})"
-        )
+        identifier = next_item_id(metadata, prefix)
         lines = read_lines(args.report)
         at, missing = insertion_point(lines, args.domain)
         block = ([f"## {args.domain.capitalize()}", ""] if missing else []) + [
-            heading,
+            f"### {identifier} (run {args.run}, item {number})",
             "",
         ]
         write_lines(args.report, splice(lines, at, block + quote(item)))
-        print(heading)
+        print(identifier)
 
 
 def prose(name: str) -> str:
@@ -910,6 +908,14 @@ def prose(name: str) -> str:
     return value
 
 
+def lettered_options(args: argparse.Namespace) -> list[str]:
+    """Letter a your-call's options in the order they were given."""
+    return [
+        f"({chr(ord('a') + index)}) {option}"
+        for index, option in enumerate([*args.option, *args.more])
+    ]
+
+
 def proposal_lines(args: argparse.Namespace) -> list[str]:
     """Render the proposal: its verdict, then the tail that verdict takes."""
     if args.proposal is Proposal.APPLY:
@@ -919,14 +925,10 @@ def proposal_lines(args: argparse.Namespace) -> list[str]:
             args.action if args.proposal is Proposal.APPLY_WITH_CHANGES else args.reason
         )
         return [f"**Proposal**: {args.proposal} — {tail}"]
-    options = [*args.option, *args.more]
     return [
         f"**Proposal**: {args.proposal}:",
         "",
-        *(
-            f"- ({chr(ord('a') + index)}) {option}"
-            for index, option in enumerate(options)
-        ),
+        *(f"- {option}" for option in lettered_options(args)),
     ]
 
 
@@ -959,7 +961,9 @@ def cmd_item_assess(args: argparse.Namespace) -> None:
     kept = lines[:quote_end]
     assessed = splice(kept, len(kept), render_prose(block, anchor_targets(metadata)))
     write_lines(args.report, assessed + ([""] + lines[end:] if lines[end:] else []))
-    print("\n".join(line for line in proposal if line))
+    if args.proposal is Proposal.YOUR_CALL:
+        for option in lettered_options(args):
+            print(f"{args.id} {option}")
 
 
 def cmd_item_decide(args: argparse.Namespace) -> None:
