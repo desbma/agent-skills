@@ -8,60 +8,26 @@ argument-hint: "[JJ_REVISION] [domain=N ...]"
 
 Review the Jujutsu changes for the target revision with external reviewer agents, and apply the review items the user picks. Reviews run in waves of two domains in parallel, each domain running a short chain of reviews.
 
-The user supplies a revision. If they do not, resolve it once, when the loop starts, to the most recent non-empty change:
-
-```bash
-jj log -r 'latest(::@ & ~empty())' --no-graph -T 'change_id'
-```
-
-Its output is `<JJ_REVISION>` for the whole loop: every wave reviews that same change, whatever the working copy holds by then.
-
 ## Domains, phases and config
 
-Each domain maps to a review skill, an item id prefix, and a default cap on chain runs per wave:
-
-- `correctness` → `review-correctness`, prefix `C`, cap from diff size
-- `readability` → `review-readability`, prefix `R`, cap from diff size
-- `tests` → `review-tests`, prefix `T`, cap 1
-- `docs` → `review-docs`, prefix `D`, cap 1
-
-The correctness and readability caps are the same value, derived once at the start of the loop from the number of lines the revision adds — the insertion count on the last line of:
-
-```bash
-jj diff -r <JJ_REVISION> --stat | tail -1
-```
-
-- under 100 lines → cap 1
-- 100 to 1000 lines → cap 2
-- 1000 to 5000 lines → cap 3
-- over 5000 lines → cap 4
+Each domain maps to an item id prefix: `correctness` → `C`, `readability` → `R`, `tests` → `T`, `docs` → `D`.
 
 A wave runs two domains in parallel: phase A waves run correctness and readability, phase B waves run tests and docs. The split keeps the domains that change production code apart from those that follow it. The loop starts at phase A, and moves between phases as the user decides at the end of each wave.
 
-Arguments after the revision override the caps, canonically `domain=N` (for example `correctness=3 docs=0`); free-form phrasing is accepted. A cap of `0` excludes the domain for the whole loop; a phase with both domains excluded is skipped.
+The `review` script settles the rest of a wave's configuration on its own: it resolves the revision, numbers the wave, and caps every chain — the code domains from the number of lines the revision adds, tests and docs at one run. Two flags of `review init` carry what the user asked for, in the wording of their request:
 
-When the user repeats a phase, they may override the caps for that wave only. The default for a repeated wave is the loop cap minus one per domain, floored at 1 for domains whose loop cap is at least 1 — repeating never silently disables a domain, and further repeats keep this same default.
+- `--cap <domain>=<N>` overrides a cap: on the loop's first wave for the whole loop, on a later wave for that wave alone. A cap of `0` excludes the domain; a phase with both domains excluded is skipped.
+- `--repeat` opens a wave over the phase the loop already ran, on lower caps.
 
 ## Chains
 
-A domain's runs within a wave form a chain. All runs of a chain use the same prompt, which designates the chain's dir as additional previous reviews: a run reads the completed captures of the runs before it, and does not raise their items again. A run that reports no items ends its chain early; otherwise the chain stops at the cap. Launch a chain's next run as soon as the previous one completes; do not wait for its assessment.
+A domain's runs within a wave form a chain. All runs of a chain use the same prompt, which designates the chain's dir as additional previous reviews: a run reads the completed captures of the runs before it, and does not raise their items again. `review chain run` starts the run the chain is due, and says so instead when the chain has ended — on a run that found no item, or at its cap. Launch a chain's next run as soon as the previous one completes; do not wait for its assessment.
 
 ## Files
 
-Derive the label used in file names:
+The review dir holds, per reviewed change, one wave report per wave, and one chain dir per chain holding that chain's captures. The `review` script creates and names both, and is the only thing that ever writes there. Captures are reviewer stdout, never annotated: a capture holding no item is a run that found none.
 
-```bash
-jj log -r <JJ_REVISION> --no-graph -T 'change_id.short(8)'
-```
-
-Its output is `<REVIEW_REVISION>`, a per-change identifier stable across amends, repo growth, and jj config. Use it only to find the change's files, never as a jj revision.
-
-The review dir holds, per reviewed change:
-
-- Wave reports `<REVIEW_REVISION>-wave<W>-<DATETIME>.md` — one per wave. Each carries the wave's items reproduced faithfully, their assessment, and the user's decisions.
-- Chain dirs `<REVIEW_REVISION>-wave<W>-<domain>/` — one per chain, holding its captures `run<K>.md`. Captures are reviewer stdout, never annotated. A run in flight writes `run<K>.md.running` and takes its final name when it completes, so a capture holding no item is a run that found none. A chain dir belongs to its reviews: never write anything in it, it only ever holds the captures.
-
-The `review` script next to this file creates both. Write a wave report only through it, and do not open it: run it as a trusted helper of this skill.
+Write a wave report only through the script, and do not open it: run it as a trusted helper of this skill.
 
 If wave reports for the change already exist, the loop resumes from them: the wave number, the item counters and the past decisions all derive from the review dir.
 
@@ -88,19 +54,17 @@ The decision is added once the user has picked, exactly one per item, its reason
 
 ## Wave round
 
-1. Determine the wave's phase, caps and number `<W>`, then create the wave, naming the phase's two domains:
+1. Create the wave, naming its phase:
 
    ```bash
-   <SKILL_DIR>/review init <REVIEW_DIR> <JJ_REVISION> <W> <domain>=<cap> <domain>=<cap>
+   <SKILL_DIR>/review init <REVIEW_DIR> <PHASE> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat]
    ```
 
-   It prints the wave report path, then one `<domain> <CHAIN_DIR>` line per chain. Launch the wave's chains in parallel, in the background, from the repository root (a run takes 10 to 20 minutes):
+   On the loop's first wave, pass `--revision` when the user supplied a revision, and leave it out otherwise: the script then resolves the most recent non-empty change. It prints the change it resolved, the wave report path, then the domain of each chain it created. That change is `<JJ_REVISION>` for the whole loop: pass it as `--revision` on every later wave, so every wave reviews that same change, whatever the working copy holds by then. Launch the chains in parallel, in the background, one call each (a run takes 10 to 20 minutes):
 
    ```bash
-   pi --model openai-codex/gpt-5.6-sol:xhigh --no-skills --skill ~/.agents/skills/<REVIEW_SKILL> -p '/skill:<REVIEW_SKILL> <JJ_REVISION>. In addition to the previous reviews you find as usual, the directory <CHAIN_DIR> also holds previous reviews of the same revision. Read its *.md files too, and do not raise their items again.' > <CHAIN_DIR>/run<K>.md.running && mv <CHAIN_DIR>/run<K>.md{.running,}
+   <SKILL_DIR>/review chain run <WAVE_REPORT> <DOMAIN>
    ```
-
-   The command is identical for every run of a chain, except for its capture's `<K>`.
 
 2. Show the header:
 
@@ -110,16 +74,16 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    `<RUN>` is the run the display announces: `1` at wave launch, the just-completed run's index on later displays. Its terminal output is the header, shown to the user directly: do not reproduce or summarize it.
 
-3. As each run completes: read its capture `<CHAIN_DIR>/run<K>.md`, launch the chain's next run if one is due, then show the header again (step 2 command, with the completed run's index), then write its items into the wave report, in item order:
+3. As each run completes: read the capture whose path it printed, launch the chain's next run with step 1's `review chain run` command — it reports the chain's end when there is none left to run — then show the header again (step 2 command, with the completed run's index), then write the run's items into the wave report:
 
    ```bash
-   <SKILL_DIR>/review item add <WAVE_REPORT> <PREFIX> <RUN> <N>
+   <SKILL_DIR>/review item import <WAVE_REPORT> <DOMAIN> <RUN>
    <SKILL_DIR>/review item assess <WAVE_REPORT> <ID> <CLAIM> [<SEVERITY>] <PROPOSAL> [<TAIL> ...] <<'EOF'
    <the justification>
    EOF
    ```
 
-   `<PREFIX>` is the domain's item id prefix — `C`, `R`, `T` or `D` — and `<N>` the item's number in the capture; `item add` allocates the id and prints the heading it wrote, which is where `<ID>` comes from. The assessment's arguments follow the verdicts: `holds` and `partly-holds` take the `<SEVERITY>` (`critical`, `major` or `minor`), `does-not-hold` takes none; then `apply` takes no `<TAIL>`, `apply-with-changes` and `decline` one text argument, `your-call` two or more. A `<TAIL>` is a command-line argument; only the justification comes from stdin:
+   `item import` quotes every item of the run into the report, in item order, and prints the heading it wrote for each, which is where `<ID>` comes from. The assessment's arguments follow the verdicts: `holds` and `partly-holds` take the `<SEVERITY>` (`critical`, `major` or `minor`), `does-not-hold` takes none; then `apply` takes no `<TAIL>`, `apply-with-changes` and `decline` one text argument, `your-call` two or more. A `<TAIL>` is a command-line argument; only the justification comes from stdin:
 
    ```bash
    <SKILL_DIR>/review item assess <WAVE_REPORT> R2 partly-holds minor decline '<the tail>' <<'EOF'
@@ -127,9 +91,9 @@ The decision is added once the user has picked, exactly one per item, its reason
    EOF
    ```
 
-   `item assess` echoes the proposal it wrote, lettering a `your-call`'s options in the order given: that letter is what a pick names. Assess it by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, say so instead of assessing it twice.
+   `item assess` echoes the proposal it wrote, lettering a `your-call`'s options in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, say so instead of assessing it twice.
 
-4. When every chain is done, show the header once more, then write the report's top part, item index and links:
+4. When every chain has ended, show the header once more, then write the report's top part, item index and links:
 
    ```bash
    <SKILL_DIR>/review report format <WAVE_REPORT>
@@ -157,7 +121,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    Run it again for an item whose decision changes later: it replaces the decision. Never open or show the annotated report — it only records decisions the user has just made, from a report they already have.
 
-8. Lay out the choices for the next step, and ask the user to decide. They are: repeat the current phase, run the other phase, or end the loop. Give the facts that bear on the choice — how many items the user picked, whether a chain was still yielding items when it hit its cap, and what the applied changes touched.
+8. Summarize the wave — what the user decided, and what the applied changes touched — then lay out the choices for the next step, and ask the user to decide. They are: repeat the current phase, run the other phase, or end the loop.
 
 9. Wait. The user now reviews the changes, may ask questions or request further edits, and squashes into the reviewed revision. Launch the next wave only on their explicit go, never before: reviews must only ever see squashed state.
 
@@ -167,7 +131,6 @@ The decision is added once the user has picked, exactly one per item, its reason
 - Issue independent operations together rather than one per turn: several tool calls in one message, several `review` invocations in one shell call.
 - Never apply an item the user did not pick.
 - Apply each picked item completely: carry the change through every aspect it naturally touches, even ones another domain owns — a correctness fix ships with its test, and with the cleanup or documentation update the same change calls for. Never leave part of a change undone because a later wave would cover that aspect.
-- Never omit an item from the wave report, however wrong you think it is.
 - Get an explicit approval and explicit choices from the user. If an answer is ambiguous, or leaves one of your questions unanswered, ask again rather than assume a default.
 - Never run a Jujutsu command that changes the VCS state. The user handles the VCS between waves.
 - The loop ends when the user says so, not when a wave comes back empty.
