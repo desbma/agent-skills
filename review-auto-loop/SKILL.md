@@ -25,7 +25,7 @@ A domain's runs within a wave form a chain. All runs of a chain use the same pro
 
 ## Files
 
-The review dir holds, per reviewed change, one wave report per wave, and one chain dir per chain holding that chain's captures. The `review` script creates and names both, and is the only thing that ever writes there. Captures are reviewer stdout, never annotated: a capture holding no item is a run that found none.
+The review dir holds, per reviewed change, one wave report per wave, one chain dir per chain holding that chain's captures, and one change summary per wave. The `review` script creates and names them all, and is the only thing that ever writes there. Captures are agent stdout, never annotated: a capture holding no item is a run that found none.
 
 Write a wave report only through the script, and do not open it: run it as a trusted helper of this skill.
 
@@ -60,11 +60,14 @@ The decision is added once the user has picked, exactly one per item, its reason
    <SKILL_DIR>/review init <REVIEW_DIR> <PHASE> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat]
    ```
 
-   On the loop's first wave, pass `--revision` when the user supplied a revision, and leave it out otherwise: the script then resolves the most recent non-empty change. It prints the change it resolved, the wave report path, then the domain of each chain it created. That change is `<JJ_REVISION>` for the whole loop: pass it as `--revision` on every later wave, so every wave reviews that same change, whatever the working copy holds by then. Launch the chains in parallel, in the background, one call each (a run takes 10 to 20 minutes):
+   On the loop's first wave, pass `--revision` when the user supplied a revision, and leave it out otherwise: the script then resolves the most recent non-empty change. It prints the change it resolved, the wave report path, then the domain of each chain it created. That change is `<JJ_REVISION>` for the whole loop: pass it as `--revision` on every later wave, so every wave reviews that same change, whatever the working copy holds by then. Launch the chains and the change summary in parallel, in the background, one call each (a review run takes 10 to 20 minutes, the summary a few):
 
    ```bash
    <SKILL_DIR>/review chain run <WAVE_REPORT> <DOMAIN>
+   <SKILL_DIR>/review summary run <WAVE_REPORT>
    ```
+
+   The summary describes the change the wave reviews, in prose an external agent writes. It lands in the report at step 4, which refuses a wave whose summary is missing or still running. Do not open its capture: it is written for the user, and says nothing the reviewed diff does not.
 
 2. Show the header:
 
@@ -99,7 +102,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    <SKILL_DIR>/review report format <WAVE_REPORT>
    ```
 
-   It refuses a wave whose chains are unfinished, or whose items are not all in the report and assessed. Run it again after any later change to an assessment: it replaces the top part and the index it generated. It prints the wave's recap, grouped by proposal verdict; show it to the user as it comes. Then open the wave report for them with `xdg-open <WAVE_REPORT>`. It is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation.
+   It refuses a wave whose chains are unfinished, whose change summary is missing, or whose items are not all in the report and assessed. Run it again after any later change to an assessment: it replaces the top part and the index it generated. It prints the wave's recap, grouped by proposal verdict; show it to the user as it comes. Then open the wave report for them with `xdg-open <WAVE_REPORT>`. It is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation.
 
 5. Let the user pick, item by item. A bare `apply` resolves against that item's proposal, never against the reviewer's text:
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["tabulate"]
+# dependencies = ["markdown-it-py", "tabulate"]
 # ///
 """Build and maintain the wave report of a review-auto-loop wave."""
 
@@ -17,6 +17,7 @@ import textwrap
 import time
 from pathlib import Path
 
+import markdown_it
 import tabulate
 
 tabulate.MIN_PADDING = 0  # ty: ignore[invalid-assignment]
@@ -32,8 +33,11 @@ CAP_SCALES = collections.defaultdict(
     tuple, dict.fromkeys(PHASE_DOMAINS["A"], ((100, 2), (1000, 3), (5000, 4)))
 )
 
-SKILLS_DIR = Path.home() / ".agents" / "skills"
+SKILLS_DIR = Path(__file__).resolve().parent.parent
 REVIEWER_MODEL = "openai-codex/gpt-5.6-sol:xhigh"
+SUMMARY_MODEL = "openai-codex/gpt-5.6-terra:medium"
+SUMMARY_PARSER = markdown_it.MarkdownIt("commonmark").enable("table")
+PARAGRAPH_TOKENS = frozenset({"paragraph_open", "inline", "paragraph_close"})
 SKILL_URL = "https://github.com/desbma/agent-skills/tree/master/review-auto-loop"
 GRID_FORMAT = tabulate.TableFormat(
     lineabove=None,
@@ -374,6 +378,18 @@ def check_capture(capture: Path) -> None:
         check_reviewer_item(item, capture, number)
 
 
+def check_summary(capture: Path) -> None:
+    """Fail unless the capture is paragraphs of prose."""
+    text = capture.read_text()
+    if not text.strip():
+        raise SystemExit("The change summary is empty")
+    blocks = {token.type for token in SUMMARY_PARSER.parse(text)} - PARAGRAPH_TOKENS
+    if blocks:
+        raise SystemExit(
+            f"The change summary is not prose: {', '.join(sorted(blocks))}"
+        )
+
+
 def quote(item: str) -> list[str]:
     """Render the item as blockquote lines, its tags code-spanned, blank lines becoming a bare `>`."""
     return [
@@ -651,17 +667,19 @@ def render_grid(
 
 
 def render_markdown(
-    state: WaveState, metadata: ReportMetadata, summary: str
+    state: WaveState, metadata: ReportMetadata, stat: str, summary: list[str]
 ) -> list[str]:
-    """Render the wave report's top part: title, status list, and the run grid as a markdown table."""
+    """Render the wave report's top part: title, status list, the run grid as a markdown table, and the change summary."""
     return [
         f"# Review wave {metadata.wave} — {metadata.short_change_id}",
         "",
         f"- **Config**: {config_text(metadata.domain_caps)}",
         f"- **Reviews**: {state.total} total",
-        f"- **Diff**: {summary}",
+        f"- **Diff**: {stat}",
         "",
         *render_grid(state, "pipe", separate_waves=False),
+        "",
+        *summary,
     ]
 
 
@@ -775,6 +793,71 @@ def chain_dir(metadata: ReportMetadata, domain: str) -> Path:
     )
 
 
+def summary_path(metadata: ReportMetadata) -> Path:
+    """Locate the change summary of the wave, named outside the report namespace."""
+    return (
+        metadata.review_dir
+        / f"{metadata.short_change_id}-summary-wave{metadata.wave}.md"
+    )
+
+
+def read_summary(metadata: ReportMetadata) -> str:
+    """Read the change summary captured for the wave."""
+    summary = summary_path(metadata)
+    if summary.with_name(summary.name + RUNNING_SUFFIX).exists():
+        raise SystemExit("The change summary is still in flight")
+    if not summary.is_file():
+        raise SystemExit(f"No change summary for the wave: {summary.name}")
+    return summary.read_text().strip()
+
+
+def run_agent(
+    model: str,
+    skill: str,
+    prompt: str,
+    capture: Path,
+    check: collections.abc.Callable[[Path], None],
+) -> Path:
+    """Run one agent under a single skill, capture its output, and give the capture its final name."""
+    running = capture.with_name(capture.name + RUNNING_SUFFIX)
+    argv = [
+        "pi",
+        "--model",
+        model,
+        "--no-skills",
+        "--skill",
+        str(SKILLS_DIR / skill),
+        "-p",
+        prompt,
+    ]
+    try:
+        stdout = running.open("x")
+    except FileExistsError:
+        raise SystemExit(f"A run is still writing {capture.name}") from None
+    status = 1
+    try:
+        with stdout:
+            status = subprocess.run(
+                argv,
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                cwd=jj_output(["root"]).strip(),
+                check=False,
+            ).returncode
+    finally:
+        if status:
+            running.unlink(missing_ok=True)
+    if status:
+        print(f"Agent run failed: pi exited {status}", file=sys.stderr)
+        raise SystemExit(status)
+    try:
+        check(running)
+    except SystemExit as refusal:
+        rejected = running.rename(capture.with_name(capture.name + REJECTED_SUFFIX))
+        raise SystemExit(f"{refusal}\nAgent output kept at {rejected}") from None
+    return running.rename(capture)
+
+
 def reviewer_prompt(domain: str, revision: str, chain: Path) -> str:
     """Ask a reviewer for one domain's review of the revision, over the chain's own dir."""
     return (
@@ -799,43 +882,32 @@ def cmd_chain_run(args: argparse.Namespace) -> None:
         print(f"Chain {args.domain} ends: run {len(counts)} found no item")
         return
     run = len(counts) + 1
-    running = chain / f"run{run}.md{RUNNING_SUFFIX}"
-    argv = [
-        "pi",
-        "--model",
-        REVIEWER_MODEL,
-        "--no-skills",
-        "--skill",
-        str(SKILLS_DIR / f"review-{args.domain}"),
-        "-p",
-        reviewer_prompt(args.domain, metadata.change_id, chain),
-    ]
-    try:
-        capture = running.open("x")
-    except FileExistsError:
-        raise SystemExit(f"Chain {args.domain} still has a run in flight") from None
-    status = 1
-    try:
-        with capture:
-            status = subprocess.run(
-                argv,
-                stdin=subprocess.DEVNULL,
-                stdout=capture,
-                cwd=jj_output(["root"]).strip(),
-                check=False,
-            ).returncode
-    finally:
-        if status:
-            running.unlink(missing_ok=True)
-    if status:
-        print(f"Review run failed: pi exited {status}", file=sys.stderr)
-        raise SystemExit(status)
-    try:
-        check_capture(running)
-    except SystemExit as refusal:
-        rejected = running.rename(chain / f"run{run}.md{REJECTED_SUFFIX}")
-        raise SystemExit(f"{refusal}\nReviewer output kept at {rejected}") from None
-    print(running.rename(chain / f"run{run}.md"))
+    print(
+        run_agent(
+            REVIEWER_MODEL,
+            f"review-{args.domain}",
+            reviewer_prompt(args.domain, metadata.change_id, chain),
+            chain / f"run{run}.md",
+            check_capture,
+        )
+    )
+
+
+def cmd_summary_run(args: argparse.Namespace) -> None:
+    """Summarize the reviewed change of the wave and capture the summary."""
+    metadata = read_metadata(args.report)
+    summary = summary_path(metadata).resolve()
+    if summary.is_file():
+        raise SystemExit(f"The wave already has a change summary: {summary.name}")
+    print(
+        run_agent(
+            SUMMARY_MODEL,
+            "summarize-change",
+            f"/skill:summarize-change {metadata.change_id}",
+            summary,
+            check_summary,
+        )
+    )
 
 
 def cmd_header_show(args: argparse.Namespace) -> None:
@@ -1118,6 +1190,7 @@ def cmd_report_format(args: argparse.Namespace) -> None:
     lines = strip_footer(read_lines(args.report))
     state = wave_state(metadata)
     check_chains_complete(metadata, state)
+    summary = read_summary(metadata)
     start = 1
     if report_is_formatted(lines):
         start = next(
@@ -1128,9 +1201,15 @@ def cmd_report_format(args: argparse.Namespace) -> None:
             ),
             len(lines),
         )
-    body = render_prose(lines[start:], anchor_targets(metadata))
+    targets = anchor_targets(metadata)
+    body = render_prose(lines[start:], targets)
     check_items_complete(metadata, state, body)
-    top = render_markdown(state, metadata, diff_summary(metadata.change_id))
+    top = render_markdown(
+        state,
+        metadata,
+        diff_summary(metadata.change_id),
+        render_prose(summary.splitlines(), targets),
+    )
     index = index_lines(body)
     section = ["", "## Items", ""] + index if index else []
     content = top + section + body + ["", footer_line()]
@@ -1180,6 +1259,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("report", type=Path, help="The wave report")
     run.add_argument("domain", choices=DOMAIN_NAMES, help="Domain of the chain")
     run.set_defaults(func=cmd_chain_run)
+
+    summary = commands.add_parser("summary", help="The wave's change summary")
+    summary_actions = summary.add_subparsers(required=True)
+    summarize = summary_actions.add_parser("run", help="Summarize the reviewed change")
+    summarize.add_argument("report", type=Path, help="The wave report")
+    summarize.set_defaults(func=cmd_summary_run)
 
     header = commands.add_parser("header", help="The wave's terminal header")
     header_actions = header.add_subparsers(required=True)

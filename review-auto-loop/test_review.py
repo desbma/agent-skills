@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["tabulate"]
+# dependencies = ["markdown-it-py", "tabulate"]
 # ///
 """Tests for the review wave report builder."""
 
@@ -66,6 +66,8 @@ ONE_ITEM = """\
 
    **Estimated delta**: +8 lines
 """
+
+SUMMARY = "The change bounds the layer walk, and drops a branch nothing reaches.\n"
 
 NESTED = """\
 1. **First** — `a.py:1`
@@ -389,6 +391,21 @@ class CliFixture(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.run_cli(*argv, stdin=stdin)
 
+    def run_with_agent(self, *argv: Any, output: str, status: int = 0) -> str:
+        """Run a subcommand with the agent replaced by one writing the given output."""
+
+        def agent(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            kwargs["stdout"].write(output)
+            return subprocess.CompletedProcess(args, status)
+
+        with (
+            mock.patch.object(review, "jj_output", return_value="/repo\n"),
+            mock.patch.object(review.subprocess, "run", side_effect=agent) as spawn,
+        ):
+            printed = self.run_cli(*argv)
+        self.spawn = spawn
+        return printed
+
 
 class WaveFixture(CliFixture):
     """A review dir carrying one phase A wave, and the helpers driving it."""
@@ -432,11 +449,20 @@ class WaveFixture(CliFixture):
         capture.write_text("")
         return capture
 
+    def write_summary(self, report: Path | None = None, text: str = SUMMARY) -> Path:
+        """Write a wave's change summary, as a completed summary run would."""
+        path = review.summary_path(
+            review.read_metadata(self.report if report is None else report)
+        )
+        path.write_text(text)
+        return path
+
     def complete_wave(self) -> None:
         """Give both chains of the wave an end, the correctness one holding the items."""
         self.capture("correctness", 1)
         self.capture("correctness", 2, "Nothing to report.\n")
         self.capture("readability", 1, "Nothing to report.\n")
+        self.write_summary()
 
     def second_wave(self) -> Path:
         """Run wave 1 to its decisions in production order, then open a phase B wave over it."""
@@ -449,6 +475,7 @@ class WaveFixture(CliFixture):
             self.decide(identifier, verdict)
         second = self.init(self.review_dir, "B")
         Path(self.review_dir, f"{REV}-wave2-tests", "run1.md").write_text(ONE_ITEM)
+        self.write_summary(second)
         return second
 
     def decided_second_wave(self) -> None:
@@ -858,11 +885,12 @@ class WaveTest(WaveFixture):
         )
 
     def test_report_format(self) -> None:
-        """The top part, the index and the links land in one pass, and the recap is printed."""
+        """The top part, the summary, the index and the links land in one pass, and the recap is printed."""
         self.capture("correctness", 2, "Nothing to report.\n")
         self.capture("readability", 2, "Nothing to report.\n")
         self.complete_wave()
         self.capture("readability", 1)
+        self.write_summary(text="The page now closes its <details> fold.\n")
         first, second = self.imported("correctness")
         self.assess(first)
         self.assess(
@@ -917,6 +945,10 @@ class WaveTest(WaveFixture):
         )
         self.assertIn("**Proposal**: apply", lines)
         self.assertIn("Subsumed by [C1](#c1-run-1-item-1).", lines)
+        summary = lines.index("The page now closes its `<details>` fold.")
+        grid = max(index for index, line in enumerate(lines) if line.startswith("|"))
+        self.assertLess(grid, summary)
+        self.assertLess(summary, lines.index("## Items"))
 
     def test_format_waits_for_the_chains(self) -> None:
         """A chain in flight, one that never ran, and one due another run all block it."""
@@ -931,6 +963,18 @@ class WaveTest(WaveFixture):
             self.run_cli("report", "format", self.report)
         self.capture("correctness", 1)
         with self.assertRaisesRegex(SystemExit, "correctness is due another run"):
+            self.run_cli("report", "format", self.report)
+
+    def test_format_waits_for_the_summary(self) -> None:
+        """A missing change summary, and one still in flight, both block the format."""
+        self.complete_wave()
+        self.imported_assessed("correctness")
+        summary = self.write_summary()
+        summary.unlink()
+        with self.assertRaisesRegex(SystemExit, "No change summary"):
+            self.run_cli("report", "format", self.report)
+        summary.with_name(summary.name + review.RUNNING_SUFFIX).write_text("")
+        with self.assertRaisesRegex(SystemExit, "summary is still in flight"):
             self.run_cli("report", "format", self.report)
 
     def test_format_requires_every_item_assessed(self) -> None:
@@ -955,6 +999,7 @@ class WaveTest(WaveFixture):
         self.capture("correctness", 1, ONE_ITEM)
         self.capture("correctness", 2, ONE_ITEM)
         self.capture("readability", 1, "Nothing to report.\n")
+        self.write_summary()
         self.imported_assessed("correctness", 1)
         self.imported_assessed("correctness", 2)
         self.assertEqual(
@@ -968,6 +1013,7 @@ class WaveTest(WaveFixture):
         review_dir.mkdir()
         report = self.init(review_dir, "B", "--cap", "docs=0")
         Path(review_dir, f"{REV}-wave1-tests", "run1.md").write_text("Nothing yet.\n")
+        self.write_summary(report)
         self.assertEqual(self.run_cli("report", "format", report), "")
         self.assertIn(
             "- **Config**: tests ≤1 · docs =0", report.read_text().splitlines()
@@ -1012,6 +1058,7 @@ class WaveTest(WaveFixture):
         """A wave that yielded nothing gets its top part, no index and no recap."""
         self.capture("correctness", 1, "No item to report.\n")
         self.capture("readability", 1, "No item to report.\n")
+        self.write_summary()
         self.assertEqual(self.run_cli("report", "format", self.report), "")
         lines = self.report.read_text().splitlines()
         self.assertEqual(lines[2], f"# Review wave 1 — {REV}")
@@ -1022,6 +1069,7 @@ class WaveTest(WaveFixture):
         self.capture("correctness", 1, ONE_ITEM)
         self.capture("correctness", 2, "Nothing to report.\n")
         self.capture("readability", 1, "Nothing to report.\n")
+        self.write_summary()
         self.imported_assessed("correctness")
         self.assertEqual(
             self.run_cli("report", "format", self.report),
@@ -1032,6 +1080,7 @@ class WaveTest(WaveFixture):
         """Every column of the markdown grid carries a right-alignment marker."""
         self.capture("correctness", 1, "No item to report.\n")
         self.capture("readability", 1, "No item to report.\n")
+        self.write_summary()
         self.run_cli("report", "format", self.report)
         rule = next(
             line
@@ -1144,20 +1193,9 @@ class ChainRunTest(WaveFixture):
 
     def run_chain(self, domain: str, output: str = ONE_ITEM, status: int = 0) -> str:
         """Run a chain with the reviewer replaced by one writing the given output."""
-
-        def reviewer(
-            argv: list[str], **kwargs: Any
-        ) -> subprocess.CompletedProcess[str]:
-            kwargs["stdout"].write(output)
-            return subprocess.CompletedProcess(argv, status)
-
-        with (
-            mock.patch.object(review, "jj_output", return_value="/repo\n"),
-            mock.patch.object(review.subprocess, "run", side_effect=reviewer) as spawn,
-        ):
-            printed = self.run_cli("chain", "run", self.report, domain)
-        self.spawn = spawn
-        return printed
+        return self.run_with_agent(
+            "chain", "run", self.report, domain, output=output, status=status
+        )
 
     def test_it_captures_the_reviewer_output(self) -> None:
         """The capture takes the run's name once the reviewer is through, and is named."""
@@ -1270,6 +1308,76 @@ class ChainRunTest(WaveFixture):
         )
 
 
+class SummaryCheckTest(unittest.TestCase):
+    """The prose check the capture of a change summary must pass."""
+
+    def check(self, text: str) -> None:
+        """Check a summary written to a file, as its capture holds it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            capture = Path(tmp, "summary.md")
+            capture.write_text(text)
+            review.check_summary(capture)
+
+    def test_paragraphs_of_prose(self) -> None:
+        """Prose passes, the code spans it names included."""
+        self.check("The change bounds the walk.\n\nIt renames `build` to `walk`.\n")
+
+    def test_rejections(self) -> None:
+        """Every block construct a renderer would show as more than a paragraph is refused."""
+        for text in (
+            "",
+            " \n\n \n",
+            "Prose.\n\n```rust\nlet x = 1;\n```\n",
+            "## Summary\n\nProse.\n",
+            "Summary\n-------\n\nProse.\n",
+            "- bounds the walk\n- drops a branch\n",
+            "1. bounds the walk\n",
+            "Prose.\n\n    let x = 1;\n",
+            "> bounds the walk\n",
+            "| a | b |\n|---|---|\n| 1 | 2 |\n",
+            "Prose.\n\n---\n\nMore prose.\n",
+        ):
+            with self.assertRaises(SystemExit):
+                self.check(text)
+
+
+class SummaryRunTest(WaveFixture):
+    """Running the change summary of a wave and capturing its output."""
+
+    def setUp(self) -> None:
+        """Name the capture the summary run of the wave writes."""
+        super().setUp()
+        self.summary = review.summary_path(review.read_metadata(self.report))
+
+    def run_summary(self, output: str = SUMMARY) -> str:
+        """Run the wave's summary with the agent replaced by one writing the given output."""
+        return self.run_with_agent("summary", "run", self.report, output=output)
+
+    def test_it_runs_and_captures_one_summary(self) -> None:
+        """The agent runs over the change, its output takes the summary name, and no second run follows."""
+        self.assertEqual(self.run_summary().strip(), str(self.summary))
+        self.assertEqual(self.summary.read_text(), SUMMARY)
+        argv = self.spawn.call_args.args[0]
+        self.assertEqual(argv[0], "pi")
+        self.assertIn(review.SUMMARY_MODEL, argv)
+        self.assertIn(str(review.SKILLS_DIR / "summarize-change"), argv)
+        self.assertIn(CHANGE_ID, argv[-1])
+        self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
+        self.assert_cli_error("summary", "run", self.report)
+
+    def test_output_that_is_not_prose_is_kept_for_repair(self) -> None:
+        """Output the prose check refuses never becomes the summary, and the wave still reads."""
+        with self.assertRaises(SystemExit) as caught:
+            self.run_summary(output="## Summary\n\nProse.\n")
+        rejected = self.summary.with_name(self.summary.name + review.REJECTED_SUFFIX)
+        self.assertEqual(rejected.read_text(), "## Summary\n\nProse.\n")
+        self.assertIn(str(rejected), str(caught.exception))
+        self.assertFalse(self.summary.exists())
+        self.run_cli("header", "show", self.report, 1)
+        self.run_summary()
+        self.assertEqual(self.summary.read_text(), SUMMARY)
+
+
 class WorkflowTest(CliFixture):
     """A whole loop of waves, driven only through the command line."""
 
@@ -1335,8 +1443,14 @@ class WorkflowTest(CliFixture):
             )
         return identifiers, self.review_run(report, domain, "")
 
+    def summary_run(self, report: Path) -> str:
+        """Summarize the change of a wave, the stub agent writing the prose."""
+        self.output.write_text(SUMMARY)
+        return self.run_cli("summary", "run", report)
+
     def decide_and_format(self, report: Path, identifiers: list[str]) -> str:
-        """Format the wave, then decide every item it holds."""
+        """Summarize the change, format the wave, then decide every item it holds."""
+        self.summary_run(report)
         recap = self.run_cli("report", "format", report)
         for identifier in identifiers:
             self.run_cli(
