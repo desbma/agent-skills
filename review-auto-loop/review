@@ -74,13 +74,17 @@ ITEM_TITLE_RE = re.compile(r"\*\*[^*]+\*\*")
 ITEM_SEVERITY_RE = re.compile(r"\*\*Severity\*\*: (critical|major|minor)\s*$")
 ITEM_DELTA_RE = re.compile(r"\*\*Estimated delta\*\*: \S")
 FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})")
+ATX_HEADING_RE = re.compile(r" {0,3}#{1,6}(?:[ \t]+|$)")
 
 PROSE_SPAN_RE = re.compile(
-    r"(?P<code>(?P<ticks>`+).*?(?P=ticks))"
+    r"(?P<escaped>\\.)"
+    r"|(?P<code>(?P<ticks>`+).*?(?P=ticks))"
+    r"|(?P<comment><!--.*?(?:-->|$))"
     r"|(?P<tag></?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>)"
     r"|(?P<angle><[^>\n]+>)"
-    r"|(?P<link>\[[^\]]*\]\([^)]*\))"
+    r"|(?P<link>\[(?P<label>[^\]]*)\](?P<target>\([^)]*\)))"
     r"|(?<![0-9A-Za-z])(?P<id>[CRTD]\d+)(?![0-9A-Za-z])"
+    r"|(?P<bare><)"
 )
 
 
@@ -391,11 +395,15 @@ def check_summary(capture: Path) -> None:
 
 
 def quote(item: str) -> list[str]:
-    """Render the item as blockquote lines, its tags code-spanned, blank lines becoming a bare `>`."""
-    return [
-        f"> {line}" if line.strip() else ">"
-        for line in render_prose(item.splitlines(), {})
-    ]
+    """Render the item as blockquote lines, its headings stripped and its HTML neutralized, blank lines becoming a bare `>`."""
+    lines = item.splitlines()
+    quoted: list[str] = []
+    for line, outside in zip(lines, outside_fences(lines)):
+        if outside:
+            heading = ATX_HEADING_RE.match(line)
+            line = span_line(line[heading.end() :] if heading else line, {})
+        quoted.append(f"> {line}" if line.strip() else ">")
+    return quoted
 
 
 def splice(lines: list[str], at: int, block: list[str]) -> list[str]:
@@ -500,21 +508,30 @@ def anchor_targets(metadata: ReportMetadata) -> dict[str, str]:
     return targets
 
 
-def render_prose(lines: list[str], targets: dict[str, str]) -> list[str]:
-    """Link the item ids the prose mentions to their headings, and code-span the HTML tags it names."""
+def span_line(line: str, targets: dict[str, str]) -> str:
+    """Link the item ids the line mentions to their headings, and neutralize the HTML it names."""
 
     def replace(match: re.Match[str]) -> str:
-        if (tag := match.group("tag")) is not None:
-            return f"`{tag}`"
+        if (html := match.group("comment") or match.group("tag")) is not None:
+            return f"`{html}`"
+        if match.group("bare") is not None:
+            return "&lt;"
+        if (label := match.group("label")) is not None:
+            return f"[{span_line(label, {})}]{match.group('target')}"
         identifier = match.group("id")
         if identifier is None or identifier not in targets:
             return match.group(0)
         return f"[{identifier}]({targets[identifier]})"
 
+    return PROSE_SPAN_RE.sub(replace, line)
+
+
+def render_prose(lines: list[str], targets: dict[str, str]) -> list[str]:
+    """Render the report's own prose, leaving the lines that carry its generated structure alone."""
     return [
         line
-        if not outside or line.startswith((">", "#", "<!--", "- ["))
-        else PROSE_SPAN_RE.sub(replace, line)
+        if not outside or line.startswith((">", "#", "- ["))
+        else span_line(line, targets)
         for line, outside in zip(lines, outside_fences(lines))
     ]
 

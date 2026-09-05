@@ -142,12 +142,36 @@ class RawReviewTest(unittest.TestCase):
         """Every line takes the blockquote prefix, blank ones becoming a bare marker."""
         self.assertEqual(review.quote("a\n\nb"), ["> a", ">", "> b"])
 
-    def test_quote_code_spans_tags(self) -> None:
-        """A tag in the reviewer's prose is code-spanned, one inside a fence left alone."""
+    def test_quote_leaves_a_fenced_block_alone(self) -> None:
+        """A fenced block keeps its tags and its hash lines, the prose around it neutralized."""
         self.assertEqual(
-            review.quote("A <details> fold.\n\n```html\n<details>\n```"),
-            ["> A `<details>` fold.", ">", "> ```html", "> <details>", "> ```"],
+            review.quote("A <details> fold.\n\n```python\n# a <details> fold\n```"),
+            [
+                "> A `<details>` fold.",
+                ">",
+                "> ```python",
+                "> # a <details> fold",
+                "> ```",
+            ],
         )
+
+    def test_quote_neutralizes_markup(self) -> None:
+        """A heading loses its marker, and the HTML around it never reaches the report live."""
+        for item, quoted in (
+            ("## A <details> fold", "> A `<details>` fold"),
+            ("##\tA <details> fold", "> A `<details>` fold"),
+            ("- [the <details> fold](x)", "> - [the `<details>` fold](x)"),
+            ("> quoting a <details> fold", "> > quoting a `<details>` fold"),
+            ("<!-- a <details> fold -->", "> `<!-- a <details> fold -->`"),
+            (
+                "<!-- a fold\nspanning two lines -->",
+                "> `<!-- a fold`\n> spanning two lines -->",
+            ),
+            ("<details\n  open>", "> &lt;details\n>   open>"),
+            (r"\<!-- a note -->", r"> \<!-- a note -->"),
+            (r"a \<details> fold", r"> a \<details> fold"),
+        ):
+            self.assertEqual(review.quote(item), quoted.splitlines())
 
 
 class RenderProseTest(unittest.TestCase):
@@ -193,16 +217,23 @@ class RenderProseTest(unittest.TestCase):
             ("<br/>", "`<br/>`"),
             ('<div class="x">', '`<div class="x">`'),
             ("Vec<u8>", "Vec`<u8>`"),
+            ("a stray <!-- note --> in prose", "a stray `<!-- note -->` in prose"),
+            ("<!-- unclosed", "`<!-- unclosed`"),
+            ("[C7 and <details>](x)", "[C7 and `<details>`](x)"),
         ):
             self.assertEqual(self.render(line), rendered)
 
+    def test_an_opening_angle_alone_is_escaped(self) -> None:
+        """An angle no tag closes is escaped, so a tag split over two lines cannot open one."""
+        self.assertEqual(self.render("a <details"), "a &lt;details")
+
     def test_angle_spans_that_are_no_tags(self) -> None:
-        """An autolink, a bare comparison and the report's own comment are left alone."""
+        """An autolink and a bare comparison are left alone."""
         for line in (
             "<user@example.test>",
             "the <T: Clone> bound",
             "a < b and c > d",
-            f"<!-- review: change_id={CHANGE_ID} wave=1 -->",
+            r"an escaped \<details> fold",
         ):
             self.assertEqual(self.render(line), line)
 
