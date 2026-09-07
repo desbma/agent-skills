@@ -22,10 +22,26 @@ import tabulate
 
 tabulate.MIN_PADDING = 0  # ty: ignore[invalid-assignment]
 
-DOMAIN_NAMES = ("correctness", "readability", "tests", "docs")
-PREFIX_TO_DOMAIN = {"C": "correctness", "R": "readability", "T": "tests", "D": "docs"}
-DOMAIN_TO_PREFIX = {domain: prefix for prefix, domain in PREFIX_TO_DOMAIN.items()}
-PHASE_DOMAINS = {"A": ("correctness", "readability"), "B": ("tests", "docs")}
+
+class Domain(enum.StrEnum):
+    """Aspect of a change one review chain covers."""
+
+    CORRECTNESS = enum.auto()
+    READABILITY = enum.auto()
+    TESTS = enum.auto()
+    DOCS = enum.auto()
+
+    @property
+    def prefix(self) -> str:
+        """Letter the ids of the domain's items open with."""
+        return self.name[0]
+
+
+PREFIX_TO_DOMAIN = {domain.prefix: domain for domain in Domain}
+PHASE_DOMAINS = {
+    "A": (Domain.CORRECTNESS, Domain.READABILITY),
+    "B": (Domain.TESTS, Domain.DOCS),
+}
 RUNNING_STR = "▶ running"
 
 DEFAULT_REVSET = "latest(::@ & ~empty())"
@@ -155,11 +171,11 @@ class ReportMetadata:
     change_id: str
     short_change_id: str
     wave: int
-    loop_caps: dict[str, int]
-    domain_caps: dict[str, int]
+    loop_caps: dict[Domain, int]
+    domain_caps: dict[Domain, int]
 
     @property
-    def active(self) -> tuple[str, ...]:
+    def active(self) -> tuple[Domain, ...]:
         """Domains of the wave its caps do not exclude."""
         return tuple(domain for domain, cap in self.domain_caps.items() if cap)
 
@@ -215,55 +231,71 @@ def added_lines(revision: str) -> int:
     return 0 if insertions is None else int(insertions.group(1))
 
 
-def derive_loop_caps(revision: str) -> dict[str, int]:
+def derive_loop_caps(revision: str) -> dict[Domain, int]:
     """Derive the caps of a whole loop, the code domains scaling with the size of the diff."""
     added = added_lines(revision)
     return {
         domain: next(
             (cap for lines, cap in reversed(CAP_SCALES[domain]) if added >= lines), 1
         )
-        for domain in DOMAIN_NAMES
+        for domain in Domain
     }
 
 
-def repeated_caps(loop_caps: dict[str, int]) -> dict[str, int]:
-    """Lower the loop caps for a repeated phase, never disabling a domain the loop runs."""
+def wave_domains(value: str) -> tuple[Domain, ...]:
+    """Convert a command line value to the domains a wave runs, a phase standing for its pair."""
+    if value in PHASE_DOMAINS:
+        return PHASE_DOMAINS[value]
+    names = value.split(",")
+    unknown = [name for name in names if name not in Domain]
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            f"Not a phase or a domain: {','.join(unknown)}"
+        )
+    domains = tuple(Domain(name) for name in names)
+    if len(set(domains)) != len(domains):
+        raise argparse.ArgumentTypeError(f"Domain named twice: {value}")
+    return domains
+
+
+def repeated_caps(loop_caps: dict[Domain, int]) -> dict[Domain, int]:
+    """Lower the loop caps for a repeated wave, never disabling a domain the loop runs."""
     return {domain: max(cap - 1, 1) if cap else 0 for domain, cap in loop_caps.items()}
 
 
-def parse_caps(pairs: list[str]) -> dict[str, int]:
+def parse_caps(pairs: list[str]) -> dict[Domain, int]:
     """Read per-domain caps from their domain=N arguments."""
-    caps: dict[str, int] = {}
+    caps: dict[Domain, int] = {}
     for pair in pairs:
-        domain, sep, value = pair.partition("=")
-        if not sep or domain not in DOMAIN_NAMES or not value.isdigit():
+        name, sep, value = pair.partition("=")
+        if not sep or name not in Domain or not value.isdigit():
             raise SystemExit(f"Malformed cap argument: {pair}")
+        domain = Domain(name)
         if domain in caps:
             raise SystemExit(f"Duplicate cap argument for {domain}")
         caps[domain] = int(value)
     return caps
 
 
-def parse_domain_caps(pairs: list[str]) -> dict[str, int]:
-    """Read the per-domain caps of one phase from its two domain=N arguments."""
+def parse_domain_caps(pairs: list[str]) -> dict[Domain, int]:
+    """Read the per-domain caps of one wave from its domain=N arguments, in canonical order."""
     caps = parse_caps(pairs)
-    for domains in PHASE_DOMAINS.values():
-        if set(caps) == set(domains):
-            if not any(caps.values()):
-                raise SystemExit("Both domains of the phase are excluded")
-            return {domain: caps[domain] for domain in domains}
-    raise SystemExit("The two domains must be the two domains of one phase")
+    if not caps:
+        raise SystemExit("The wave names no domain")
+    if not any(caps.values()):
+        raise SystemExit("Every domain of the wave is excluded")
+    return {domain: caps[domain] for domain in Domain if domain in caps}
 
 
-def parse_loop_caps(value: str) -> dict[str, int]:
+def parse_loop_caps(value: str) -> dict[Domain, int]:
     """Read the caps of the whole loop from the `domain:N,...` field of a review comment."""
     caps = parse_caps([pair.replace(":", "=") for pair in value.split(",")])
-    if tuple(caps) != DOMAIN_NAMES:
+    if tuple(caps) != tuple(Domain):
         raise SystemExit(f"Loop caps do not cover every domain: {value}")
     return caps
 
 
-def config_text(domain_caps: dict[str, int]) -> str:
+def config_text(domain_caps: dict[Domain, int]) -> str:
     """Render the per-domain caps as one line, excluded domains shown as `=0`."""
     return " · ".join(
         f"{domain} ≤{cap}" if cap else f"{domain} =0"
@@ -285,7 +317,7 @@ def read_metadata(report: Path) -> ReportMetadata:
     if "loop" not in fields:
         raise SystemExit(f"Wave report has no loop caps: {report.name}")
     domain_caps = parse_domain_caps(
-        [f"{domain}={fields[domain]}" for domain in DOMAIN_NAMES if domain in fields]
+        [f"{domain}={fields[domain]}" for domain in Domain if domain in fields]
     )
     if fields.get("wave") != name.group(2) or fields.get("change_id", "")[
         :8
@@ -425,12 +457,12 @@ def structural_lines(lines: list[str]) -> list[tuple[int, str]]:
     ]
 
 
-def heading_domain(line: str) -> str | None:
+def heading_domain(line: str) -> Domain | None:
     """Read the domain a `## Domain` section heading names, if the line is one."""
     heading = DOMAIN_HEADING_RE.match(line)
-    if heading is None or heading.group(1).lower() not in DOMAIN_NAMES:
+    if heading is None or heading.group(1).lower() not in Domain:
         return None
-    return heading.group(1).lower()
+    return Domain(heading.group(1).lower())
 
 
 def is_item_boundary(line: str) -> bool:
@@ -442,7 +474,7 @@ def is_item_boundary(line: str) -> bool:
     )
 
 
-def section_start(lines: list[str], domain: str) -> int | None:
+def section_start(lines: list[str], domain: Domain) -> int | None:
     """Locate a domain's section heading, if the report has one."""
     for index, line in structural_lines(lines):
         if heading_domain(line) == domain:
@@ -450,7 +482,7 @@ def section_start(lines: list[str], domain: str) -> int | None:
     return None
 
 
-def insertion_point(lines: list[str], domain: str) -> tuple[int, bool]:
+def insertion_point(lines: list[str], domain: Domain) -> tuple[int, bool]:
     """Locate where the domain's next item goes, and whether its section heading is missing."""
     structural = structural_lines(lines)
     start = section_start(lines, domain)
@@ -459,9 +491,10 @@ def insertion_point(lines: list[str], domain: str) -> tuple[int, bool]:
             if index > start and heading_domain(line) is not None:
                 return index, False
         return len(lines), False
+    order = tuple(Domain)
     for index, line in structural:
         other = heading_domain(line)
-        if other is not None and DOMAIN_NAMES.index(other) > DOMAIN_NAMES.index(domain):
+        if other is not None and order.index(other) > order.index(domain):
             return index, True
     return len(lines), True
 
@@ -538,10 +571,10 @@ def render_prose(lines: list[str], targets: dict[str, str]) -> list[str]:
 
 def scan_review_dir(
     review_dir: Path, short_change_id: str
-) -> tuple[dict[int, Path], dict[tuple[int, str], list[int | None]]]:
+) -> tuple[dict[int, Path], dict[tuple[int, Domain], list[int | None]]]:
     """Scan the review dir for the wave reports, and the item count of each capture per chain in run order, an in-flight run counting as None."""
     reports: dict[int, Path] = {}
-    runs: dict[tuple[int, str], dict[int, int | None]] = {}
+    runs: dict[tuple[int, Domain], dict[int, int | None]] = {}
     prefix = f"{short_change_id}-"
     # the wave component keeps the user's own review of the change out of the scan
     for entry in sorted(review_dir.glob(f"{prefix}wave*")):
@@ -554,9 +587,9 @@ def scan_review_dir(
         elif (
             entry.is_dir()
             and (chain := CHAIN_DIRNAME_RE.fullmatch(name))
-            and chain.group(2) in DOMAIN_NAMES
+            and chain.group(2) in Domain
         ):
-            key = (int(chain.group(1)), chain.group(2))
+            key = (int(chain.group(1)), Domain(chain.group(2)))
             for capture in sorted(entry.iterdir()):
                 if capture.name.endswith(REJECTED_SUFFIX):
                     continue
@@ -571,7 +604,7 @@ def scan_review_dir(
                 )
         else:
             raise SystemExit(f"Unexpected entry in review dir: {entry.name}")
-    counts: dict[tuple[int, str], list[int | None]] = {}
+    counts: dict[tuple[int, Domain], list[int | None]] = {}
     for key, by_run in runs.items():
         if sorted(by_run) != list(range(1, len(by_run) + 1)):
             raise SystemExit(f"Non-contiguous runs for wave {key[0]} {key[1]}")
@@ -584,37 +617,37 @@ def scan_review_dir(
     return reports, counts
 
 
-def decided_counts(report: Path) -> dict[tuple[str, int], list[int]]:
+def decided_counts(report: Path) -> dict[tuple[Domain, int], list[int]]:
     """Count [findings, applied, applied with changes] per (domain, run) of a wave report."""
-    counts: dict[tuple[str, int], list[int]] = {}
-    pending: str | None = None
-    key = ("", 0)
+    counts: dict[tuple[Domain, int], list[int]] = {}
+    pending: tuple[str, tuple[Domain, int]] | None = None
     for _, line in structural_lines(report.read_text().splitlines()):
         if heading := ITEM_HEADING_RE.match(line):
             if pending is not None:
-                raise SystemExit(f"Item {pending} in {report.name} has no decision")
-            pending = heading.group(1) + heading.group(2)
+                raise SystemExit(f"Item {pending[0]} in {report.name} has no decision")
             key = (PREFIX_TO_DOMAIN[heading.group(1)], int(heading.group(3)))
+            pending = (heading.group(1) + heading.group(2), key)
             counts.setdefault(key, [0, 0, 0])[0] += 1
         elif (decision := DECISION_RE.match(line)) and pending is not None:
+            counted = counts[pending[1]]
             if decision.group(1) == "applied":
-                counts[key][1] += 1
+                counted[1] += 1
             elif decision.group(1) == "applied with changes":
-                counts[key][2] += 1
+                counted[2] += 1
             pending = None
     if pending is not None:
-        raise SystemExit(f"Item {pending} in {report.name} has no decision")
+        raise SystemExit(f"Item {pending[0]} in {report.name} has no decision")
     return counts
 
 
 def grid(
-    item_counts: dict[tuple[int, str], list[int | None]],
+    item_counts: dict[tuple[int, Domain], list[int | None]],
     reports: dict[int, Path],
     wave: int,
-    active: tuple[str, ...],
-) -> tuple[dict[int, int], dict[tuple[int, int, str], str]]:
+    active: tuple[Domain, ...],
+) -> tuple[dict[int, int], dict[tuple[int, int, Domain], str]]:
     """Build the row count per wave and the cell text per (wave, run, domain)."""
-    cells: dict[tuple[int, int, str], str] = {}
+    cells: dict[tuple[int, int, Domain], str] = {}
     rows: dict[int, int] = {}
     for past in range(1, wave):
         report = reports.get(past)
@@ -626,12 +659,10 @@ def grid(
                 raise SystemExit(
                     f"{report.name} references {domain} run {run} with no capture"
                 )
-        rows[past] = max(
-            len(item_counts.get((past, domain), [])) for domain in DOMAIN_NAMES
-        )
+        rows[past] = max(len(item_counts.get((past, domain), [])) for domain in Domain)
         if rows[past] == 0:
             raise SystemExit(f"No capture for completed wave {past}")
-        for domain in DOMAIN_NAMES:
+        for domain in Domain:
             for run in range(1, len(item_counts.get((past, domain), [])) + 1):
                 found, applied, changed = counts.get((domain, run), [0, 0, 0])
                 if found == 0:
@@ -654,9 +685,9 @@ class WaveState:
     """The run grid of a change, with the capture counts it was built from."""
 
     rows: dict[int, int]
-    cells: dict[tuple[int, int, str], str]
+    cells: dict[tuple[int, int, Domain], str]
     total: int
-    item_counts: dict[tuple[int, str], list[int | None]]
+    item_counts: dict[tuple[int, Domain], list[int | None]]
 
 
 def render_grid(
@@ -670,16 +701,16 @@ def render_grid(
         body.extend(
             [
                 f"wave {wave} run {run}" if run == 1 else f"run {run}",
-                *(state.cells.get((wave, run, domain), "") for domain in DOMAIN_NAMES),
+                *(state.cells.get((wave, run, domain), "") for domain in Domain),
             ]
             for run in range(1, state.rows[wave] + 1)
         )
     return tabulate.tabulate(
         body,
-        headers=("", *DOMAIN_NAMES),
+        headers=("", *Domain),
         tablefmt=tablefmt,
         disable_numparse=True,
-        colalign=("right",) * (len(DOMAIN_NAMES) + 1),
+        colalign=("right",) * (len(Domain) + 1),
     ).splitlines()
 
 
@@ -750,13 +781,13 @@ def write_lines(report: Path, lines: list[str]) -> None:
     report.write_text("\n".join(lines) + "\n")
 
 
-def wave_caps(args: argparse.Namespace, loop_caps: dict[str, int]) -> dict[str, int]:
-    """Read the caps of the wave's phase off the loop caps, lowered when it repeats one."""
+def wave_caps(
+    args: argparse.Namespace, loop_caps: dict[Domain, int]
+) -> dict[Domain, int]:
+    """Read the caps of the wave's domains off the loop caps, lowered when it repeats them."""
     caps = repeated_caps(loop_caps) if args.repeat else dict(loop_caps)
     caps.update(parse_caps(args.cap))
-    return parse_domain_caps(
-        [f"{domain}={caps[domain]}" for domain in PHASE_DOMAINS[args.phase]]
-    )
+    return parse_domain_caps([f"{domain}={caps[domain]}" for domain in args.domains])
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -801,7 +832,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         print(domain)
 
 
-def chain_dir(metadata: ReportMetadata, domain: str) -> Path:
+def chain_dir(metadata: ReportMetadata, domain: Domain) -> Path:
     """Locate the captures directory of one of the wave's active domains."""
     if domain not in metadata.active:
         raise SystemExit(f"Domain {domain} is not active in this wave")
@@ -875,7 +906,7 @@ def run_agent(
     return running.rename(capture)
 
 
-def reviewer_prompt(domain: str, revision: str, chain: Path) -> str:
+def reviewer_prompt(domain: Domain, revision: str, chain: Path) -> str:
     """Ask a reviewer for one domain's review of the revision, over the chain's own dir."""
     return (
         f"/skill:review-{domain} {revision}. In addition to the previous reviews you "
@@ -968,7 +999,7 @@ def is_imported(lines: list[str], prefix: str, run: int) -> bool:
 def cmd_item_import(args: argparse.Namespace) -> None:
     """Quote every item of a chain capture into the wave report, allocating their ids."""
     metadata = read_metadata(args.report)
-    prefix = DOMAIN_TO_PREFIX[args.domain]
+    prefix = args.domain.prefix
     capture = chain_dir(metadata, args.domain) / f"run{args.run}.md"
     if not capture.is_file():
         raise SystemExit(f"No such capture: {capture}")
@@ -1171,7 +1202,7 @@ def check_items_complete(
             if found
         }
     )
-    written: collections.Counter[tuple[str, int]] = collections.Counter()
+    written: collections.Counter[tuple[Domain, int]] = collections.Counter()
     assessments: dict[str, list[int]] = {}
     identifier = ""
     for line in body:
@@ -1250,7 +1281,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     init = commands.add_parser("init", help="Create the wave report and its chain dirs")
     init.add_argument("review_dir", help="Directory holding the review files")
-    init.add_argument("phase", choices=tuple(PHASE_DOMAINS), help="Phase of the wave")
+    init.add_argument(
+        "domains",
+        type=wave_domains,
+        metavar="{A,B,DOMAIN[,DOMAIN...]}",
+        help="Phase of the wave, or the comma separated domains it runs",
+    )
     init.add_argument(
         "--revision",
         default=DEFAULT_REVSET,
@@ -1266,7 +1302,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument(
         "--repeat",
         action="store_true",
-        help="Repeat the phase, lowering the loop caps by one",
+        help="Repeat the domains already run, lowering the loop caps by one",
     )
     init.set_defaults(func=cmd_init)
 
@@ -1274,7 +1310,12 @@ def build_parser() -> argparse.ArgumentParser:
     chain_actions = chain.add_subparsers(required=True)
     run = chain_actions.add_parser("run", help="Run the chain's next review")
     run.add_argument("report", type=Path, help="The wave report")
-    run.add_argument("domain", choices=DOMAIN_NAMES, help="Domain of the chain")
+    run.add_argument(
+        "domain",
+        type=enum_type(Domain),
+        metavar=enum_metavar(Domain),
+        help="Domain of the chain",
+    )
     run.set_defaults(func=cmd_chain_run)
 
     summary = commands.add_parser("summary", help="The wave's change summary")
@@ -1297,7 +1338,12 @@ def build_parser() -> argparse.ArgumentParser:
         "import", help="Quote a capture's items into the wave report"
     )
     imported.add_argument("report", type=Path, help="The wave report")
-    imported.add_argument("domain", choices=DOMAIN_NAMES, help="Domain of the chain")
+    imported.add_argument(
+        "domain",
+        type=enum_type(Domain),
+        metavar=enum_metavar(Domain),
+        help="Domain of the chain",
+    )
     imported.add_argument("run", type=positive_int, help="Run of the chain to import")
     imported.set_defaults(func=cmd_item_import)
 

@@ -312,9 +312,9 @@ class AssessHelpTest(unittest.TestCase):
 
 
 class CapsTest(unittest.TestCase):
-    """Reading the domain caps of a phase off the command line."""
+    """Reading the domain caps of a wave off the command line."""
 
-    def test_caps_take_the_order_of_the_phase(self) -> None:
+    def test_caps_take_the_canonical_domain_order(self) -> None:
         """The caps come back in canonical domain order, whatever the order given."""
         self.assertEqual(
             list(review.parse_domain_caps(["readability=3", "correctness=2"]).items()),
@@ -325,10 +325,18 @@ class CapsTest(unittest.TestCase):
             [("tests", 1), ("docs", 0)],
         )
 
+    def test_a_wave_holds_the_domains_it_names(self) -> None:
+        """Domains no phase groups, and a domain on its own, carry their caps."""
+        self.assertEqual(
+            list(review.parse_domain_caps(["tests=1", "readability=2"]).items()),
+            [("readability", 2), ("tests", 1)],
+        )
+        self.assertEqual(review.parse_domain_caps(["docs=1"]), {"docs": 1})
+
     def test_rejections(self) -> None:
-        """A cross-phase pair, a fully excluded phase and malformed pairs are refused."""
+        """A wave without a domain, one fully excluded and malformed pairs are refused."""
         for pairs in (
-            ["correctness=1", "docs=1"],
+            [],
             ["correctness=0", "readability=0"],
             ["correctness=1", "correctness=2"],
             ["correctness", "readability=1"],
@@ -650,6 +658,30 @@ class WaveTest(WaveFixture):
         self.assertEqual(out.splitlines()[2:], ["tests"])
         self.assertTrue(Path(review_dir, f"{REV}-wave1-tests").is_dir())
         self.assertFalse(Path(review_dir, f"{REV}-wave1-docs").exists())
+
+    def test_init_takes_a_hand_picked_domain_list(self) -> None:
+        """A wave named by its domains runs them whatever phase groups each."""
+        review_dir = Path(self.review_dir, "hand-picked")
+        review_dir.mkdir()
+        out = self.run_cli(
+            "init", review_dir, "tests,readability", "--cap", "tests=2"
+        ).splitlines()
+        self.assertEqual(out[2:], ["readability", "tests"])
+        self.assertEqual(
+            Path(out[1]).read_text(),
+            f"<!-- review: change_id={CHANGE_ID} wave=1 "
+            "loop=correctness:1,readability:1,tests:2,docs:1 "
+            "readability=1 tests=2 -->\n",
+        )
+        for domain in ("readability", "tests"):
+            self.assertTrue(Path(review_dir, f"{REV}-wave1-{domain}").is_dir())
+
+    def test_init_refuses_a_malformed_domain_list(self) -> None:
+        """An unknown domain, a repeated one, a phase inside a list and an empty name fail."""
+        review_dir = Path(self.review_dir, "malformed")
+        review_dir.mkdir()
+        for domains in ("prose", "tests,tests", "A,B", "tests,", ""):
+            self.assert_cli_error("init", review_dir, domains)
 
     def test_import_creates_sections_in_canonical_order(self) -> None:
         """The readability section follows the correctness one whatever the order of the calls."""
@@ -1119,7 +1151,7 @@ class WaveTest(WaveFixture):
             if set(line) == {"|", "-", ":"}
         )
         cells = rule.strip("|").split("|")
-        self.assertEqual(len(cells), len(review.DOMAIN_NAMES) + 1)
+        self.assertEqual(len(cells), len(review.Domain) + 1)
         self.assertTrue(all(cell.endswith(":") for cell in cells))
 
     def test_header_show(self) -> None:
@@ -1141,7 +1173,7 @@ class WaveTest(WaveFixture):
         out = self.run_cli("header", "show", self.report, 1).splitlines()
         head = next(line for line in out if "│" in line)
         self.assertTrue(head.startswith("  "))
-        self.assertEqual(head.count("│"), len(review.DOMAIN_NAMES))
+        self.assertEqual(head.count("│"), len(review.Domain))
         self.assertFalse(any(set("╭╮╰╯├┤┬┴") & set(line) for line in out))
 
     def test_grid_rules_the_waves_apart(self) -> None:
@@ -1557,6 +1589,23 @@ class WorkflowTest(CliFixture):
         self.decide_and_format(report, code)
         self.assertNotEqual(report, second)
         return report
+
+    def test_a_wave_over_hand_picked_domains(self) -> None:
+        """A wave named by its domains crosses the phase split and formats like any other."""
+        report, domains = self.open_wave("correctness,docs")
+        self.assertEqual(domains, ["correctness", "docs"])
+        code, ended = self.chain_to_its_end(
+            report, "correctness", ONE_ITEM, "Nothing to report.\n"
+        )
+        self.assertEqual(ended, "Chain correctness ends: it has reached its cap of 2\n")
+        docs, ended = self.chain_to_its_end(report, "docs", ONE_ITEM)
+        self.assertEqual(ended, "Chain docs ends: it has reached its cap of 1\n")
+        self.assertEqual(code + docs, ["C1", "D1"])
+        recap = self.decide_and_format(report, code + docs)
+        self.assertIn("2 items · 2 apply", recap)
+        self.assertIn(
+            "- **Config**: correctness ≤2 · docs ≤1", report.read_text().splitlines()
+        )
 
 
 class EntryPointTest(unittest.TestCase):

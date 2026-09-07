@@ -6,18 +6,20 @@ argument-hint: "[JJ_REVISION] [domain=N ...]"
 
 # Review auto-loop
 
-Review the Jujutsu changes for the target revision with external reviewer agents, and apply the review items the user picks. Reviews run in waves of two domains in parallel, each domain running a short chain of reviews.
+Review the Jujutsu changes for the target revision with external reviewer agents, and apply the review items the user picks. Reviews run in waves of parallel per-domain review chains.
 
 ## Domains, phases and config
 
 Each domain maps to an item id prefix: `correctness` → `C`, `readability` → `R`, `tests` → `T`, `docs` → `D`.
 
-A wave runs two domains in parallel: phase A waves run correctness and readability, phase B waves run tests and docs. The split keeps the domains that change production code apart from those that follow it. The loop starts at phase A, and moves between phases as the user decides at the end of each wave.
+By default, a wave runs two domains in parallel: phase A waves run correctness and readability, phase B waves run tests and docs. The split keeps the domains that change production code apart from those that follow it. The loop starts at phase A, and moves between phases as the user decides at the end of each wave.
+
+A wave can also run domains the phases keep apart. `review init` takes a comma separated domain list in place of the phase letter, and the wave then runs exactly the domains it names. `<domain>=<N>` arguments still set caps; when the domains they name do not fit one phase — `readability=1 tests=1` — they name the wave's domains too. A wave whose domains would fit one phase is asked for in words: "only readability this wave". Compose a wave by hand only on the user's request: one crossing the split reviews tests and docs against code its own correctness items may still change.
 
 The `review` script settles the rest of a wave's configuration on its own: it resolves the revision, numbers the wave, and caps every chain — the code domains from the number of lines the revision adds, tests and docs at one run. Two flags of `review init` carry what the user asked for, in the wording of their request:
 
-- `--cap <domain>=<N>` overrides a cap: on the loop's first wave for the whole loop, on a later wave for that wave alone. A cap of `0` excludes the domain; a phase with both domains excluded is skipped.
-- `--repeat` opens a wave over the phase the loop already ran, on lower caps.
+- `--cap <domain>=<N>` overrides a cap: on the loop's first wave for the whole loop, on a later wave for that wave alone. A cap of `0` excludes the domain; a wave left with no domain is not opened.
+- `--repeat` opens a wave over the domains the loop already ran, on lower caps.
 
 ## Chains
 
@@ -54,10 +56,10 @@ The decision is added once the user has picked, exactly one per item, its reason
 
 ## Wave round
 
-1. Create the wave, naming its phase:
+1. Create the wave, naming its phase or its domains:
 
    ```bash
-   <SKILL_DIR>/review init <REVIEW_DIR> <PHASE> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat]
+   <SKILL_DIR>/review init <REVIEW_DIR> <PHASE|DOMAIN,...> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat]
    ```
 
    On the loop's first wave, pass `--revision` when the user supplied a revision, and leave it out otherwise: the script then resolves the most recent non-empty change. It prints the change it resolved, the wave report path, then the domain of each chain it created. That change is `<JJ_REVISION>` for the whole loop: pass it as `--revision` on every later wave, so every wave reviews that same change, whatever the working copy holds by then. Launch the chains and the change summary in parallel, in the background, one call each (a review run takes 10 to 20 minutes, the summary a few):
@@ -94,7 +96,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    EOF
    ```
 
-   `item assess` echoes a `your-call`'s options under the item id, lettered in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's two domains so the user can weigh them together; when an item duplicates one from the other domain or from a past wave, say so instead of assessing it twice.
+   `item assess` echoes a `your-call`'s options under the item id, lettered in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's domains so the user can weigh them together; when an item duplicates one from another domain or from a past wave, say so instead of assessing it twice.
 
 4. When every chain has ended, show the header once more, then write the report's top part, item index and links:
 
@@ -124,7 +126,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    Run it again for an item whose decision changes later: it replaces the decision. Never open or show the annotated report — it only records decisions the user has just made, from a report they already have.
 
-8. Summarize the wave — what the user decided, and what the applied changes touched — then ask once which move comes next: repeat the current phase, or run the other phase. Ending the loop is not offered as a third: it is what happens when no wave is asked for.
+8. Summarize the wave — what the user decided, and what the applied changes touched — then ask once which move comes next: repeat the domains this wave ran, or move to the ones it left out, named as phases when the wave ran a phase. Ending the loop is not offered as a third: it is what happens when no wave is asked for.
 
 9. Wait. The user now reviews the changes, may ask questions or request further edits, and squashes into the reviewed revision. Launch the next wave only on their explicit go, never before: reviews must only ever see squashed state. Step 8's question is never restated; a loop nobody comes back to is over.
 
