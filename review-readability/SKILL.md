@@ -39,6 +39,7 @@ The work of updating tests is never an argument against a simplification: if cod
 
 - Replace loops with list comprehensions or `itertools` functions
   - the `more_itertools` dependency can be added if it helps
+- Where `argparse` supports it, express type constraints and cross-argument validation (for example mutually exclusive arguments) in the parser itself rather than in checks after parsing
 
 ### Rust specific
 
