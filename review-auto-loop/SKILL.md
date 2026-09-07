@@ -124,9 +124,9 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    Run it again for an item whose decision changes later: it replaces the decision. Never open or show the annotated report — it only records decisions the user has just made, from a report they already have.
 
-8. Summarize the wave — what the user decided, and what the applied changes touched — then lay out the choices for the next step, and ask the user to decide. They are: repeat the current phase, run the other phase, or end the loop.
+8. Summarize the wave — what the user decided, and what the applied changes touched — then ask once which move comes next: repeat the current phase, or run the other phase. Ending the loop is not offered as a third: it is what happens when no wave is asked for.
 
-9. Wait. The user now reviews the changes, may ask questions or request further edits, and squashes into the reviewed revision. Launch the next wave only on their explicit go, never before: reviews must only ever see squashed state.
+9. Wait. The user now reviews the changes, may ask questions or request further edits, and squashes into the reviewed revision. Launch the next wave only on their explicit go, never before: reviews must only ever see squashed state. Step 8's question is never restated; a loop nobody comes back to is over.
 
 ## Rules
 
@@ -136,4 +136,4 @@ The decision is added once the user has picked, exactly one per item, its reason
 - Apply each picked item completely: carry the change through every aspect it naturally touches, even ones another domain owns — a correctness fix ships with its test, and with the cleanup or documentation update the same change calls for. Never leave part of a change undone because a later wave would cover that aspect.
 - Get an explicit approval and explicit choices from the user. If an answer is ambiguous, or leaves one of your questions unanswered, ask again rather than assume a default.
 - Never run a Jujutsu command that changes the VCS state. The user handles the VCS between waves.
-- The loop ends when the user says so, not when a wave comes back empty.
+- Only a request launches a wave: an empty wave does not end the loop, and a conversation that moves on does not have to say it has.
