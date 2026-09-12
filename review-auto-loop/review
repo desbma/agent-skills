@@ -10,6 +10,7 @@ import collections
 import collections.abc
 import dataclasses
 import enum
+import functools
 import re
 import subprocess
 import sys
@@ -81,7 +82,7 @@ CLAIM_RE = re.compile(
     r"\*\*Claim\*\*: (holds|partly holds|does not hold)(?:, (critical|major|minor))?\s*$"
 )
 PROPOSAL_RE = re.compile(
-    r"\*\*Proposal\*\*: (apply with changes|apply|decline|your call)(?: — |:?\s*$)"
+    r"\*\*Proposal\*\*: (apply with changes|apply|decline|your call)(?: — | \(|:?\s*$)"
 )
 DECISION_RE = re.compile(r"\*\*Decision\*\*: (applied with changes|applied|declined)")
 
@@ -191,6 +192,13 @@ def item_id(value: str) -> str:
     """Convert a command line value to an item id, a domain prefix followed by its counter."""
     if not re.fullmatch(r"[CRTD][1-9]\d*", value):
         raise argparse.ArgumentTypeError(f"Not an item id: {value}")
+    return value
+
+
+def option_text(value: str) -> str:
+    """Convert a command line value to a your-call option, which holds its own delta."""
+    if re.fullmatch(r"[-+]?\d+", value):
+        raise argparse.ArgumentTypeError(f"Not an option, but a line count: {value}")
     return value
 
 
@@ -1036,15 +1044,25 @@ def lettered_options(args: argparse.Namespace) -> list[str]:
     ]
 
 
+def delta_text(delta: int) -> str:
+    """Render a line count, signed unless it is zero."""
+    count = f"{delta:+d}" if delta else "0"
+    return f"{count} line" if abs(delta) == 1 else f"{count} lines"
+
+
 def proposal_lines(args: argparse.Namespace) -> list[str]:
     """Render the proposal: its verdict, then the tail that verdict takes."""
     if args.proposal is Proposal.APPLY:
-        return [f"**Proposal**: {args.proposal}"]
-    if args.proposal is not Proposal.YOUR_CALL:
-        tail = (
-            args.action if args.proposal is Proposal.APPLY_WITH_CHANGES else args.reason
-        )
-        return [f"**Proposal**: {args.proposal} — {tail}"]
+        if args.delta is None:
+            return [f"**Proposal**: {args.proposal}"]
+        revised = f"revised estimate: {delta_text(args.delta)}"
+        return [f"**Proposal**: {args.proposal} ({revised})"]
+    if args.proposal is Proposal.APPLY_WITH_CHANGES:
+        return [
+            f"**Proposal**: {args.proposal} — {args.action} ({delta_text(args.delta)})"
+        ]
+    if args.proposal is Proposal.DECLINE:
+        return [f"**Proposal**: {args.proposal} — {args.reason}"]
     return [
         f"**Proposal**: {args.proposal}:",
         "",
@@ -1381,19 +1399,32 @@ def build_parser() -> argparse.ArgumentParser:
         for proposal in Proposal:
             offer = proposals.add_parser(token(proposal))
             offer.set_defaults(proposal=proposal)
-            if proposal is Proposal.APPLY_WITH_CHANGES:
+            if proposal is Proposal.APPLY:
+                offer.add_argument(
+                    "delta",
+                    metavar="DELTA",
+                    nargs="?",
+                    type=int,
+                    help="Lines the item's fix comes to, when the item's estimate is wrong",
+                )
+            elif proposal is Proposal.APPLY_WITH_CHANGES:
                 offer.add_argument(
                     "action", metavar="ACTION", help="What to do instead"
+                )
+                offer.add_argument(
+                    "delta",
+                    metavar="DELTA",
+                    type=int,
+                    help="Lines that change adds or removes, against the code as it stands",
                 )
             elif proposal is Proposal.DECLINE:
                 offer.add_argument("reason", metavar="REASON", help="Why not")
             elif proposal is Proposal.YOUR_CALL:
-                offer.add_argument(
-                    "option", nargs=2, metavar="OPTION", help="The two first options"
+                add_option = functools.partial(
+                    offer.add_argument, metavar="OPTION", type=option_text
                 )
-                offer.add_argument(
-                    "more", nargs="*", metavar="OPTION", help="Any further option"
-                )
+                add_option("option", nargs=2, help="The two first options")
+                add_option("more", nargs="*", help="Any further option")
             forms.append(usage_form(offer))
     # argparse lists only the next layer of subcommands: a subtree deeper than
     # one layer states its leaf forms here, a one-layer one needs no such block.

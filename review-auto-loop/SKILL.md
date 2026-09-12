@@ -43,12 +43,16 @@ The severity follows the claim: the reviewer's own, kept when it stands, replace
 
 The proposal carries the course of action, never empty:
 
-- `apply` — the item's fix, as the item writes it
-- `apply-with-changes` — a different change, named by the tail
+- `apply` — the item's fix, as the item writes it, the tail revising its estimate
+- `apply-with-changes` — a different change, named by the tail, and its delta
 - `decline` — no change, the tail saying why
 - `your-call` — a choice that is genuinely the user's; each tail argument states one option, so a reply can name it
 
 The two are independent. An item whose claim holds still gets `decline` when the fix costs more than the flaw it closes; one whose claim does not hold still gets `apply-with-changes` when checking it uncovered a different, real change. Outside `your-call` the proposal never hedges: "worth doing, or skip" is not a proposal, it is `apply-with-changes` or `your-call`.
+
+The delta an `apply-with-changes` carries is counted, not carried over: the item's own estimate covers the fix the reviewer wrote, and the proposal is a different change. Count what that change adds and removes against the code as it stands, tests included. A `your-call` option that departs from the item states its delta the same way, inside the option's text.
+
+On an `apply` the item's estimate stands, and the tail is a revision of it: give it only when your own count differs, the justification then saying what moved it. Silence there is agreement, so count before staying silent.
 
 The severity is what makes a `decline` legible. Declining a `minor` item needs no defense; declining a `critical` one has to name what outweighs it, and when nothing does, the severity was wrong.
 
@@ -88,12 +92,14 @@ The decision is added once the user has picked, exactly one per item, its reason
    EOF
    ```
 
-   `item import` quotes every item of the run into the report, in item order, and prints the id it gave each, which is where `<ID>` comes from. The assessment's arguments follow the verdicts: `holds` and `partly-holds` take the `<SEVERITY>` (`critical`, `major` or `minor`), `does-not-hold` takes none; then `apply` takes no `<TAIL>`, `apply-with-changes` and `decline` one text argument, `your-call` two or more. A `<TAIL>` is a command-line argument; only the justification comes from stdin:
+   `item import` quotes every item of the run into the report, in item order, and prints the id it gave each, which is where `<ID>` comes from. One form per proposal, `apply` with and without its tail, each taking the justification on stdin as above:
 
    ```bash
-   <SKILL_DIR>/review item assess <WAVE_REPORT> R2 partly-holds minor decline '<the tail>' <<'EOF'
-   <the justification>
-   EOF
+   <SKILL_DIR>/review item assess <WAVE_REPORT> C3 holds major apply
+   <SKILL_DIR>/review item assess <WAVE_REPORT> C4 holds major apply -8
+   <SKILL_DIR>/review item assess <WAVE_REPORT> R2 partly-holds minor apply-with-changes '<what to do instead>' +3
+   <SKILL_DIR>/review item assess <WAVE_REPORT> R5 does-not-hold decline '<why not>'
+   <SKILL_DIR>/review item assess <WAVE_REPORT> T1 holds minor your-call '<one option>' '<another>'
    ```
 
    `item assess` echoes a `your-call`'s options under the item id, lettered in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's domains so the user can weigh them together; when an item duplicates one from another domain or from a past wave, say so instead of assessing it twice.

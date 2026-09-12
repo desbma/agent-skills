@@ -292,22 +292,16 @@ class AssessHelpTest(unittest.TestCase):
         forms = [
             line.partition(" id ")[2] for line in body.splitlines() if line.strip()
         ]
+        rated = "{critical,major,minor}"
+        claims = (f"holds {rated}", f"partly-holds {rated}", "does-not-hold")
+        proposals = (
+            "apply [DELTA]",
+            "apply-with-changes ACTION DELTA",
+            "decline REASON",
+            "your-call OPTION OPTION [OPTION ...]",
+        )
         self.assertEqual(
-            forms,
-            [
-                "holds {critical,major,minor} apply",
-                "holds {critical,major,minor} apply-with-changes ACTION",
-                "holds {critical,major,minor} decline REASON",
-                "holds {critical,major,minor} your-call OPTION OPTION [OPTION ...]",
-                "partly-holds {critical,major,minor} apply",
-                "partly-holds {critical,major,minor} apply-with-changes ACTION",
-                "partly-holds {critical,major,minor} decline REASON",
-                "partly-holds {critical,major,minor} your-call OPTION OPTION [OPTION ...]",
-                "does-not-hold apply",
-                "does-not-hold apply-with-changes ACTION",
-                "does-not-hold decline REASON",
-                "does-not-hold your-call OPTION OPTION [OPTION ...]",
-            ],
+            forms, [f"{claim} {proposal}" for claim in claims for proposal in proposals]
         )
 
 
@@ -408,6 +402,15 @@ class SlugTest(unittest.TestCase):
     def test_item_heading(self) -> None:
         """Punctuation is dropped and spaces become hyphens."""
         self.assertEqual(review.slug("C7 (run 2, item 1)"), "c7-run-2-item-1")
+
+
+class DeltaTextTest(unittest.TestCase):
+    """Line counts as a proposal states them."""
+
+    def test_it_signs_every_count_but_zero(self) -> None:
+        """A count carries its sign unless it is zero, and its unit follows its magnitude."""
+        for delta, rendered in ((4, "+4 lines"), (-1, "-1 line"), (0, "0 lines")):
+            self.assertEqual(review.delta_text(delta), rendered)
 
 
 class CliFixture(unittest.TestCase):
@@ -741,6 +744,7 @@ class WaveTest(WaveFixture):
         out = self.assess(
             self.imported("correctness")[0],
             "bound it in the caller",
+            3,
             claim="partly-holds",
             severity="minor",
             proposal="apply-with-changes",
@@ -750,8 +754,18 @@ class WaveTest(WaveFixture):
         self.assertEqual(out, "")
         self.assertIn(
             "**Claim**: partly holds, minor\n\nOnly the retry path can overrun it.\n\n"
-            "**Proposal**: apply with changes — bound it in the caller\n",
+            "**Proposal**: apply with changes — bound it in the caller (+3 lines)\n",
             text,
+        )
+
+    def test_assess_revises_the_estimate_of_an_apply(self) -> None:
+        """An apply states a delta only to revise the item's estimate."""
+        self.capture("correctness", 1)
+        identifier = self.imported("correctness")[0]
+        self.assess(identifier, -2, stdin="The item over-counts its own fix.")
+        self.assertIn(
+            "**Proposal**: apply (revised estimate: -2 lines)",
+            self.report.read_text(),
         )
 
     def test_assess_overwrites_and_keeps_the_quote(self) -> None:
@@ -849,8 +863,13 @@ class WaveTest(WaveFixture):
             ["does-not-hold", "minor", "decline", "x"],
             ["holds", "minor", "apply", "x"],
             ["holds", "minor", "apply-with-changes"],
+            ["holds", "minor", "apply-with-changes", "x"],
+            ["holds", "minor", "apply-with-changes", "x", "a few"],
             ["holds", "minor", "decline"],
             ["holds", "minor", "your-call", "a"],
+            ["holds", "minor", "your-call", "a", "3"],
+            ["holds", "minor", "your-call", "-4", "b"],
+            ["holds", "minor", "your-call", "a", "b", "0"],
             ["nearly-holds", "minor", "apply"],
         ):
             self.assert_cli_error(*base, *extra, stdin="prose")
@@ -959,6 +978,7 @@ class WaveTest(WaveFixture):
         self.assess(
             second,
             "bound it in the caller",
+            3,
             claim="partly-holds",
             proposal="apply-with-changes",
             stdin="Only the retry path can overrun it.",
@@ -1012,6 +1032,19 @@ class WaveTest(WaveFixture):
         grid = max(index for index, line in enumerate(lines) if line.startswith("|"))
         self.assertLess(grid, summary)
         self.assertLess(summary, lines.index("## Items"))
+
+    def test_a_revised_estimate_reaches_the_index_and_the_decision(self) -> None:
+        """An apply carrying a revised estimate formats, indexes, recaps and decides like a bare one."""
+        self.complete_wave()
+        first, second = self.imported("correctness")
+        self.assess(first, -2, stdin="The item over-counts its own fix.")
+        self.assess(second, stdin="The estimate covers it.")
+        recap = self.run_cli("report", "format", self.report)
+        self.assertEqual(recap, "2 items · 2 apply\n\n- apply: C1, C2\n")
+        self.decide(first)
+        lines = self.report.read_text().splitlines()
+        self.assertIn("  - [C1 / major / holds, apply](#c1-run-1-item-1)", lines)
+        self.assertIn("**Decision**: applied — as proposed", lines)
 
     def test_format_waits_for_the_chains(self) -> None:
         """A chain in flight, one that never ran, and one due another run all block it."""
