@@ -34,6 +34,10 @@ The review dir may already contain reviews of the same revision, from a previous
 
 Each item of a previous review may be annotated with the decision the user made about it: applied, applied with changes, or declined. Do not raise again an item that appears in a previous review, whether or not it carries a decision yet, and whatever the decision was.
 
+## Working tree
+
+Leave the working tree as you found it: keep the artifacts the repository ignores where they are, write the others outside it, and delete the ones that land in it anyway, never a file your own commands did not create. For example, reuse a Cargo `target/` dir the repository ignores rather than redirect it; where `.coverage` is not ignored, point coverage.py at a `COVERAGE_FILE` outside the tree.
+
 ## Output
 
 Write the review to stdout only.
