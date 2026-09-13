@@ -959,7 +959,7 @@ def cmd_summary_run(args: argparse.Namespace) -> None:
         run_agent(
             SUMMARY_MODEL,
             "summarize-change",
-            f"/skill:summarize-change {metadata.change_id}",
+            f"/skill:summarize-change {metadata.change_id}. Summarize that exact revision.",
             summary,
             check_summary,
         )

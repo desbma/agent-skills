@@ -4,7 +4,9 @@ Instructions shared by all `review-*` skills.
 
 ## Input
 
-A review targets a single Jujutsu revision, supplied by the user as `<JJ_REVISION>`. If none is supplied, resolve it to the most recent non-empty change:
+A review targets a single Jujutsu revision, `<JJ_REVISION>`, supplied by the user. Take it verbatim from the prompt.
+
+Resolve it yourself only when the prompt carries none:
 
 ```bash
 jj log -r 'latest(::@ & ~empty())' --no-graph -T 'change_id'

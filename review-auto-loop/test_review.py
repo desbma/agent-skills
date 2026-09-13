@@ -1457,7 +1457,10 @@ class SummaryRunTest(WaveFixture):
         self.assertEqual(argv[0], "pi")
         self.assertIn(review.SUMMARY_MODEL, argv)
         self.assertIn(str(review.SKILLS_DIR / "summarize-change"), argv)
-        self.assertIn(CHANGE_ID, argv[-1])
+        self.assertEqual(
+            argv[-1],
+            f"/skill:summarize-change {CHANGE_ID}. Summarize that exact revision.",
+        )
         self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
         self.assert_cli_error("summary", "run", self.report)
 
