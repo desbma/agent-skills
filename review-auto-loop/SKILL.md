@@ -75,15 +75,17 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    The summary describes the change the wave reviews, in prose an external agent writes. It lands in the report at step 4, which refuses a wave whose summary is missing or still running. Do not open its capture: it is written for the user, and says nothing the reviewed diff does not.
 
-2. Show the header:
+2. Print the header:
 
    ```bash
    <SKILL_DIR>/review header show <WAVE_REPORT> <RUN>
    ```
 
-   `<RUN>` is the run the display announces: `1` at wave launch, the just-completed run's index on later displays. Its terminal output is the header, shown to the user directly: do not reproduce or summarize it.
+   `<RUN>` is the run the display announces: `1` at wave launch, the just-completed run's index on later displays. The command prints the header to the user's terminal itself; once it has run, the user has seen it.
 
-3. As each run completes: read the capture whose path it printed, launch the chain's next run with step 1's `review chain run` command — it reports the chain's end when there is none left to run — then show the header again (step 2 command, with the completed run's index), then write the run's items into the wave report:
+   At wave launch nothing follows the header but the turn's closing sentence: the wave is open and its runs under way. Not its wave number, its domains, its caps, nor its diff stat — the header carries all four.
+
+3. As each run completes: read the capture whose path it printed, launch the chain's next run with step 1's `review chain run` command — it reports the chain's end when there is none left to run — then print the header again (step 2 command, with the completed run's index), then write the run's items into the wave report:
 
    ```bash
    <SKILL_DIR>/review item import <WAVE_REPORT> <DOMAIN> <RUN>
@@ -104,13 +106,15 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    `item assess` echoes a `your-call`'s options under the item id, lettered in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's domains so the user can weigh them together; when an item duplicates one from another domain or from a past wave, say so instead of assessing it twice.
 
-4. When every chain has ended, show the header once more, then write the report's top part, item index and links:
+4. When every chain has ended, print the header once more, then write the report's top part, item index and links:
 
    ```bash
    <SKILL_DIR>/review report format <WAVE_REPORT>
    ```
 
-   It refuses a wave whose chains are unfinished, whose change summary is missing, or whose items are not all in the report and assessed. Run it again after any later change to an assessment: it replaces the top part and the index it generated. It prints the wave's recap, grouped by proposal verdict; show it to the user as it comes. Then open the wave report for them with `xdg-open <WAVE_REPORT>`. It is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation.
+   It refuses a wave whose chains are unfinished, whose change summary is missing, or whose items are not all in the report and assessed. Run it again after any later change to an assessment: it replaces the top part and the index it generated. The command prints the wave's recap — the item total, the count per proposal verdict, and the items carrying each — to the user's terminal. Then open the wave report for them with `xdg-open <WAVE_REPORT>`. The report is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation.
+
+   The turn then ends on what neither the recap nor the report carries: items colliding across the wave's domains, anything the user should weigh before picking, anything outside the reviewed diff. Not the totals, not the per-verdict lists — the user has just read them.
 
 5. Let the user pick, item by item. A bare `apply` resolves against that item's proposal, never against the reviewer's text:
 
@@ -139,6 +143,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 ## Rules
 
 - `review header show` and `review report format` are run verbatim: no pipe, no redirection, no `head`/`tail`/`grep`, no output limit, alone in their call. Their output is for the user, not for you to digest, so its length is never a reason to trim it.
+- What `review header show` and `review report format` print reaches the user's terminal as it is printed. Never quote it back, restate its figures, or summarize it: whatever message accompanies it carries only what it does not.
 - Issue independent operations together rather than one per turn: several tool calls in one message, several `review` invocations in one shell call.
 - Never apply an item the user did not pick.
 - Apply each picked item completely: carry the change through every aspect it naturally touches, even ones another domain owns — a correctness fix ships with its test, and with the cleanup or documentation update the same change calls for. Never leave part of a change undone because a later wave would cover that aspect.
