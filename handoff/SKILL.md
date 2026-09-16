@@ -15,7 +15,7 @@ Split the conversation into the lines of work a fresh agent could pick up on its
 
 ## Files
 
-Write them in the exchange dir, named `handoff-<slug>.md`, where `<slug>` is a few kebab-case words naming the path: a fix named "fix A" for a crash on login gives `handoff-fix-A-login-crash.md`.
+Write them in the handoff dir, named `handoff-<slug>.md`, where `<slug>` is a few kebab-case words naming the path: a fix named "fix A" for a crash on login gives `handoff-fix-A-login-crash.md`.
 
 When a document for the path already exists, update it in place: it has to hold the state of the code and of the proposal as they stand now, so an agent resuming from it never works from a stale one.
 

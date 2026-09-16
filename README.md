@@ -27,7 +27,7 @@ Personal [coding agent skills](https://agentskills.io/).
   - [`review-tests`](review-tests/SKILL.md): Improve tests, find untested areas or useless tests.
   - [`review-docs`](review-docs/SKILL.md): Find docs or comments that are stale, missing, or breaking written conventions.
 - [`rust-project-maintenance`](rust-project-maintenance/SKILL.md): Run mechanical maintenance tasks for Rust projects, pausing for review after each change.
-- [`settle-discussion`](settle-discussion/SKILL.md): Variant of the [`grill-me` skill](https://github.com/mattpocock/skills/blob/170ad48655825783d0193e850e31a9aac957bb95/skills/productivity/grilling/SKILL.md) that keeps the state of the discussion in the agent's memory. Ideal for fleshing out an idea into a spec.
+- [`settle-discussion`](settle-discussion/SKILL.md): Variant of the [`grill-me` skill](https://github.com/mattpocock/skills/blob/170ad48655825783d0193e850e31a9aac957bb95/skills/productivity/grilling/SKILL.md) that keeps the state of the discussion in a decision log file. Ideal for fleshing out an idea into a spec.
 - [`summarize-change`](summarize-change/SKILL.md): Describe the changes of a revision as high level prose (called by the `review-auto-loop` skill).
 - [`wait-what`](wait-what/SKILL.md): Ask for the last message to be pitched again in plain English, to counter the cryptic and overly compressed language Opus 5 tends to use. Variant of the [`wait-what` skill](https://github.com/mattpocock/skills/blob/50777fcc0982d5867997a75a1e0731b9daac94eb/skills/productivity/wait-what/SKILL.md).
 

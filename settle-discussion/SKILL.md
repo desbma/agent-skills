@@ -17,7 +17,7 @@ Do not act on it until the user confirms you have reached a shared understanding
 
 ## Decision log
 
-Keep a decision log in a single memory file of type `project` for the topic, following your memory system's format, and index it in `MEMORY.md`. It is the durable record of the discussion: a log of every decision with its reasons, written for a future implementor agent who lacks this conversation.
+Keep a decision log for the topic in a single markdown file in the handoff dir, named `decisions-<slug>.md`, where `<slug>` is a few kebab-case words naming the topic. It is the durable record of the discussion: a log of every decision with its reasons, written for a future implementor agent who lacks this conversation. When a log for the topic is already there, continue it rather than opening a second one.
 
 Update it between questions: after each of the user's answers, before asking the next question, record the outcome of the point just discussed.
 
