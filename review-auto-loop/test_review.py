@@ -196,7 +196,7 @@ class RenderProseTest(unittest.TestCase):
         for line in (
             "> C7 as the reviewer wrote it",
             "> a <details> fold, as the reviewer wrote it",
-            "### C7 (run 2, item 1)",
+            "#### C7 (run 2, item 1)",
             "the `C7` symbol",
             "the ``C7`` symbol",
             "the `<details>` element",
@@ -697,12 +697,12 @@ class WaveTest(WaveFixture):
         self.assertEqual(
             headings,
             [
-                "## Correctness",
-                "### C1 (run 1, item 1)",
-                "### C2 (run 1, item 2)",
-                "## Readability",
-                "### R1 (run 1, item 1)",
-                "### R2 (run 1, item 2)",
+                "### Correctness",
+                "#### C1 (run 1, item 1)",
+                "#### C2 (run 1, item 2)",
+                "### Readability",
+                "#### R1 (run 1, item 1)",
+                "#### R2 (run 1, item 2)",
             ],
         )
         self.assertIn("> **Bound the layer walk** — `src/build.rs:133-147`", lines)
@@ -816,7 +816,7 @@ class WaveTest(WaveFixture):
         self.imported("correctness", 2)
         lines = self.report.read_text().splitlines()
         self.assertLess(
-            lines.index("**Proposal**: apply"), lines.index("### C3 (run 2, item 1)")
+            lines.index("**Proposal**: apply"), lines.index("#### C3 (run 2, item 1)")
         )
 
     def test_a_fenced_item_heading_does_not_end_an_item(self) -> None:
@@ -824,12 +824,12 @@ class WaveTest(WaveFixture):
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         self.assess(
-            identifier, stdin="Like:\n\n```markdown\n### C9 (run 3, item 1)\n```"
+            identifier, stdin="Like:\n\n```markdown\n#### C9 (run 3, item 1)\n```"
         )
         self.decide(identifier)
         text = self.report.read_text()
         self.assertIn("**Decision**: applied — as proposed", text)
-        self.assertIn("### C9 (run 3, item 1)", text)
+        self.assertIn("#### C9 (run 3, item 1)", text)
 
     def test_a_fenced_decision_does_not_decide_the_item(self) -> None:
         """A decision line inside a fenced sample does not stand for the user's decision."""
@@ -849,10 +849,10 @@ class WaveTest(WaveFixture):
         self.capture("readability", 1, ONE_ITEM)
         self.assess(
             self.imported("correctness")[0],
-            stdin="Like:\n\n```markdown\n## Readability\n```",
+            stdin="Like:\n\n```markdown\n### Readability\n```",
         )
         self.imported("readability")
-        self.assertEqual(self.report.read_text().count("## Readability"), 2)
+        self.assertEqual(self.report.read_text().count("### Readability"), 2)
 
     def test_assess_argument_rules(self) -> None:
         """The parser takes a severity exactly where the claim calls for one, with the proposal's own tail."""
@@ -1013,7 +1013,7 @@ class WaveTest(WaveFixture):
         self.assertIn("- **Config**: correctness ≤2 · readability ≤2", lines)
         self.assertIn("## Items", lines)
         self.assertEqual(
-            lines[lines.index("## Items") + 2 : lines.index("## Correctness") - 1],
+            lines[lines.index("## Items") + 2 : lines.index("### Correctness") - 1],
             [
                 "- Correctness",
                 "  - [C1 / major / holds, apply](#c1-run-1-item-1)",
@@ -1030,7 +1030,9 @@ class WaveTest(WaveFixture):
         self.assertIn("Subsumed by [C1](#c1-run-1-item-1).", lines)
         summary = lines.index("The page now closes its `<details>` fold.")
         grid = max(index for index, line in enumerate(lines) if line.startswith("|"))
-        self.assertLess(grid, summary)
+        self.assertLess(lines.index("## Review status"), grid)
+        self.assertLess(grid, lines.index("## Change summary"))
+        self.assertLess(lines.index("## Change summary"), summary)
         self.assertLess(summary, lines.index("## Items"))
 
     def test_a_revised_estimate_reaches_the_index_and_the_decision(self) -> None:
