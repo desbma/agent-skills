@@ -39,7 +39,7 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 
 The claim judges the item as the reviewer wrote it — whether its diagnosis survives reading the code, and how severe what survives is — and nothing else. It never carries a course of action. Assessing an item again replaces its assessment, until the item is decided.
 
-The severity follows the claim: the reviewer's own, kept when it stands, replaced when it does not, the justification then saying what moved it. State it on every item rather than let silence stand for agreement; the reviewer's own stays visible in the quoted item, so a downgrade reads as a disagreement and not as an erasure. A `partly-holds` item is rated on what survives, not on what the reviewer claimed. `does-not-hold` is the one exception: no defect survives, so there is nothing to rate.
+The severity follows the claim: the reviewer's own, kept when it stands, replaced when it does not, the analysis then saying what moved it. State it on every item rather than let silence stand for agreement; the reviewer's own stays visible in the quoted item, so a downgrade reads as a disagreement and not as an erasure. A `partly-holds` item is rated on what survives, not on what the reviewer claimed. `does-not-hold` is the one exception: no defect survives, so there is nothing to rate.
 
 The proposal carries the course of action, never empty:
 
@@ -52,11 +52,11 @@ The two are independent. An item whose claim holds still gets `decline` when the
 
 The delta an `apply-with-changes` carries is counted, not carried over: the item's own estimate covers the fix the reviewer wrote, and the proposal is a different change. Count what that change adds and removes against the code as it stands, tests included. A `your-call` option that departs from the item states its delta the same way, inside the option's text.
 
-On an `apply` the item's estimate stands, and the tail is a revision of it: give it only when your own count differs, the justification then saying what moved it. Silence there is agreement, so count before staying silent.
+On an `apply` the item's estimate stands, and the tail is a revision of it: give it only when your own count differs, the analysis then saying what moved it. Silence there is agreement, so count before staying silent.
 
 The severity is what makes a `decline` legible. Declining a `minor` item needs no defense; declining a `critical` one has to name what outweighs it, and when nothing does, the severity was wrong.
 
-The decision is added once the user has picked, exactly one per item, its reason never empty. Deciding an item again replaces its decision. `applied-with-changes` means the applied change departs from the item as the reviewer wrote it, whoever asked for the departure. Taking the proposal as offered maps verdict for verdict: `apply` to `applied`, `apply-with-changes` to `applied-with-changes`, `decline` to `declined`. A `your-call` item, or a pick that overrides the proposal, takes the verdict the user's choice actually produced.
+The decision is added once the user has picked, exactly one per item, its reasoning never empty. Deciding an item again replaces its decision. `applied-with-changes` means the applied change departs from the item as the reviewer wrote it, whoever asked for the departure. Taking the proposal as offered maps verdict for verdict: `apply` to `applied`, `apply-with-changes` to `applied-with-changes`, `decline` to `declined`. A `your-call` item, or a pick that overrides the proposal, takes the verdict the user's choice actually produced.
 
 ## Wave round
 
@@ -90,11 +90,11 @@ The decision is added once the user has picked, exactly one per item, its reason
    ```bash
    <SKILL_DIR>/review item import <WAVE_REPORT> <DOMAIN> <RUN>
    <SKILL_DIR>/review item assess <WAVE_REPORT> <ID> <CLAIM> [<SEVERITY>] <PROPOSAL> [<TAIL> ...] <<'EOF'
-   <the justification>
+   <the analysis>
    EOF
    ```
 
-   `item import` quotes every item of the run into the report, in item order, and prints the id it gave each, which is where `<ID>` comes from. One form per proposal, `apply` with and without its tail, each taking the justification on stdin as above:
+   `item import` quotes every item of the run into the report, in item order, and prints the id it gave each, which is where `<ID>` comes from. One form per proposal, `apply` with and without its tail, each taking the analysis on stdin as above:
 
    ```bash
    <SKILL_DIR>/review item assess <WAVE_REPORT> C3 holds major apply
@@ -104,7 +104,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    <SKILL_DIR>/review item assess <WAVE_REPORT> T1 holds minor your-call '<one option>' '<another>'
    ```
 
-   `item assess` echoes a `your-call`'s options under the item id, lettered in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and justify at whatever length it deserves. Flag items colliding across the wave's domains so the user can weigh them together; when an item duplicates one from another domain or from a past wave, say so instead of assessing it twice.
+   `item assess` echoes a `your-call`'s options under the item id, lettered in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and write the analysis at whatever length it deserves. Flag items colliding across the wave's domains so the user can weigh them together; when an item duplicates one from another domain or from a past wave, say so instead of assessing it twice.
 
 4. When every chain has ended, print the header once more, then write the report's top part, item index and links:
 
@@ -130,7 +130,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    ```bash
    <SKILL_DIR>/review item decide <WAVE_REPORT> <ID> --verdict <VERDICT> <<'EOF'
-   <the reason>
+   <the reasoning>
    EOF
    ```
 

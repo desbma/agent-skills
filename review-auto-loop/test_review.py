@@ -31,14 +31,16 @@ REV = CHANGE_ID[:8]
 TARGETS = {"C7": "#c7-run-2-item-1", "R2": "wave1.md#r2-run-1-item-2"}
 LINKED = "[C7](#c7-run-2-item-1)"
 
-CAPTURE = """\
-Reviewing the changes.
-
+ONE_ITEM = """\
 1. **Bound the layer walk** — `src/build.rs:133-147`
 
    **Severity**: major
 
+   **Issue**:
+
    The builder walks an unbounded stack.
+
+   **Proposed change**:
 
    ```rust
    3. not an item
@@ -46,49 +48,39 @@ Reviewing the changes.
    ```
 
    **Estimated delta**: +8 lines
+"""
 
+CAPTURE = f"""\
+Reviewing the changes.
+
+{ONE_ITEM}
 2. **Drop the unused branch** — `src/read.rs:20`
 
    **Severity**: minor
 
+   **Issue**:
+
    Nothing reaches it.
+
+   **Proposed change**:
+
+   Delete it.
 
    **Estimated delta**: -12 lines
 """
 
-
-ONE_ITEM = """\
-1. **Bound the layer walk** — `src/build.rs:133-147`
-
-   **Severity**: major
-
-   The builder walks an unbounded stack.
-
-   **Estimated delta**: +8 lines
-"""
-
 SUMMARY = "The change bounds the layer walk, and drops a branch nothing reaches.\n"
 
-NESTED = """\
-1. **First** — `a.py:1`
-
-   **Severity**: minor
-
-   In two steps:
-
-   1. read it
-   2. write it
-
-   **Estimated delta**: +1 lines
-
-2. **Second** — `b.py:2`
-
-   **Severity**: minor
-
-   Prose.
-
-   **Estimated delta**: +2 lines
-"""
+ISSUE, CHANGE = "**Issue**:\n\nprose", "**Proposed change**:\n\nprose"
+GOOD_ITEM = (
+    f"**T** — `a.py:1`\n\n**Severity**: major\n\n{ISSUE}\n\n{CHANGE}\n\n"
+    "**Estimated delta**: +1 lines"
+)
+SECOND_FINDING = (
+    "**Drop the unused branch** — `src/read.rs:20`\n\n**Severity**: minor\n\n"
+    "**Issue**:\n\nNothing reaches it.\n\n**Proposed change**:\n\nDelete it.\n\n"
+    "**Estimated delta**: -1 lines\n"
+)
 
 
 class RawReviewTest(unittest.TestCase):
@@ -108,8 +100,9 @@ class RawReviewTest(unittest.TestCase):
 
     def test_nested_numbers_are_not_items(self) -> None:
         """A numbered list inside an item does not open one."""
-        self.assertEqual(sorted(review.reviewer_item_spans(NESTED)), [1, 2])
-        self.assertTrue(review.reviewer_items(NESTED)[2].startswith("**Second**"))
+        text = "1. **First**\n\n   1. read it\n   2. write it\n\n2. **Second**"
+        self.assertEqual(sorted(review.reviewer_item_spans(text)), [1, 2])
+        self.assertTrue(review.reviewer_items(text)[2].startswith("**Second**"))
 
     def test_repeated_and_skipped_numbers(self) -> None:
         """Item numbers that repeat or skip one are refused."""
@@ -125,15 +118,64 @@ class RawReviewTest(unittest.TestCase):
         self.assertEqual(sorted(review.reviewer_item_spans(text)), [1, 2])
 
     def test_format_checks(self) -> None:
-        """An item is rejected without a title, a severity paragraph or a delta."""
+        """An item is rejected without a title, without a label, with one twice, or with one out of its own paragraph."""
         capture = Path("run1.md")
-        good = "**T** — `a.py:1`\n\n**Severity**: major\n\nprose\n\n**Estimated delta**: +1 lines"
-        review.check_reviewer_item(good, capture, 1)
+        review.check_reviewer_item(GOOD_ITEM, capture, 1)
         for broken in (
-            "no title here\n\n**Severity**: major\n\n**Estimated delta**: +1 lines",
-            "**T** — `a.py:1`\n\nprose\n\n**Estimated delta**: +1 lines",
-            "**T** — `a.py:1`\n**Severity**: major\n\n**Estimated delta**: +1 lines",
-            "**T** — `a.py:1`\n\n**Severity**: major\n\nprose",
+            GOOD_ITEM.replace("**T** — `a.py:1`", "no title here"),
+            GOOD_ITEM.replace("**Severity**: major\n\n", ""),
+            GOOD_ITEM.replace("`a.py:1`\n\n**Severity**", "`a.py:1`\n**Severity**"),
+            GOOD_ITEM.replace("**Severity**: major\n\n", "**Severity**: major\n"),
+            GOOD_ITEM.replace(f"{ISSUE}\n\n", ""),
+            GOOD_ITEM.replace(f"{CHANGE}\n\n", ""),
+            GOOD_ITEM.replace(ISSUE, "**Issue**:\nprose"),
+            GOOD_ITEM.replace(CHANGE, "**Proposed change**:\nprose"),
+            GOOD_ITEM.replace("\n\n**Estimated delta**: +1 lines", ""),
+            GOOD_ITEM.replace("\n\n**Estimated delta**", "\n**Estimated delta**"),
+            GOOD_ITEM.replace("+1 lines", "bananas"),
+            GOOD_ITEM.replace(ISSUE, "**Issue**:"),
+            GOOD_ITEM.replace(CHANGE, "**Proposed change**:"),
+            f"{GOOD_ITEM}\n\n{SECOND_FINDING}",
+        ):
+            with self.assertRaises(SystemExit):
+                review.check_reviewer_item(broken, capture, 1)
+
+    def test_format_checks_accept_every_delta_form(self) -> None:
+        """A zero count, a singular unit, and a range with a qualifier are all accepted."""
+        capture = Path("run1.md")
+        for delta in (
+            "0 lines",
+            "-1 line",
+            "+8 to 15 lines including a regression test",
+        ):
+            review.check_reviewer_item(GOOD_ITEM.replace("+1 lines", delta), capture, 1)
+
+    def test_format_checks_name_the_form_they_want(self) -> None:
+        """A label written in another shape is reported as the form the item lacks, not as a missing block."""
+        capture = Path("run1.md")
+        for old, new, form in (
+            ("major", "high", "**Severity**: <critical, major or minor>"),
+            (ISSUE, "**Issue**: prose", "**Issue**:"),
+            (CHANGE, "**Proposed change**: prose", "**Proposed change**:"),
+            (
+                "**Estimated delta**:",
+                "**Estimated delta:**",
+                "**Estimated delta**: <count> lines",
+            ),
+        ):
+            with self.assertRaises(SystemExit) as caught:
+                review.check_reviewer_item(GOOD_ITEM.replace(old, new), capture, 1)
+            self.assertIn(f'"{form}"', str(caught.exception))
+
+    def test_format_checks_read_the_labels_outside_fences(self) -> None:
+        """A label inside a fenced sample is neither the item's own nor a substitute for it."""
+        capture = Path("run1.md")
+        fence = "```markdown\n**Issue**:\n\n**Estimated delta**: +1 lines\n```"
+        sample = GOOD_ITEM.replace(CHANGE, f"**Proposed change**:\n\n{fence}")
+        review.check_reviewer_item(sample, capture, 1)
+        for broken in (
+            sample.replace(f"{ISSUE}\n\n", ""),
+            sample.removesuffix("\n\n**Estimated delta**: +1 lines"),
         ):
             with self.assertRaises(SystemExit):
                 review.check_reviewer_item(broken, capture, 1)
@@ -563,7 +605,7 @@ class WaveFixture(CliFixture):
         self,
         identifier: str,
         verdict: str = "applied",
-        reason: str = "as proposed",
+        reasoning: str = "as proposed",
         report: Path | None = None,
     ) -> None:
         """Record an item's decision, the defaults standing for taking the proposal."""
@@ -574,7 +616,7 @@ class WaveFixture(CliFixture):
             identifier,
             "--verdict",
             verdict,
-            stdin=reason,
+            stdin=reasoning,
         )
 
     def imported_assessed(self, domain: str, run: int = 1) -> list[str]:
@@ -739,7 +781,7 @@ class WaveTest(WaveFixture):
         self.assertNotIn("###", self.report.read_text())
 
     def test_assess_writes_the_claim_and_proposal(self) -> None:
-        """The assessment lands below the quote, with the justification between its two lines, and prints nothing."""
+        """The assessment lands below the quote, its analysis between the claim and the proposal, and prints nothing."""
         self.capture("correctness", 1)
         out = self.assess(
             self.imported("correctness")[0],
@@ -753,7 +795,8 @@ class WaveTest(WaveFixture):
         text = self.report.read_text()
         self.assertEqual(out, "")
         self.assertIn(
-            "**Claim**: partly holds, minor\n\nOnly the retry path can overrun it.\n\n"
+            "**Claim**: partly holds, minor\n\n**Analysis**:\n\n"
+            "Only the retry path can overrun it.\n\n"
             "**Proposal**: apply with changes — bound it in the caller (+3 lines)\n",
             text,
         )
@@ -786,17 +829,27 @@ class WaveTest(WaveFixture):
         self.assertIn("**Claim**: does not hold\n", text)
         self.assertIn("> **Bound the layer walk**", text)
 
+    def test_a_decided_item_is_not_reassessed(self) -> None:
+        """A decided item refuses a new assessment, its decision left as it stands."""
+        self.capture("correctness", 1)
+        identifier = self.imported_assessed("correctness")[0]
+        self.decide(identifier)
+        decided = self.report.read_text()
+        with self.assertRaises(SystemExit):
+            self.assess(identifier, stdin="Worth another look.")
+        self.assertEqual(self.report.read_text(), decided)
+
     def test_an_assessment_may_hold_a_hash_line(self) -> None:
-        """A `#` line inside a justification does not end the item."""
+        """A `#` line inside an analysis does not end the item."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         self.assess(
             identifier, stdin="Reproduced with:\n\n```sh\n# run it\nreview\n```"
         )
         self.decide(identifier)
-        self.assertIn("**Decision**: applied — as proposed", self.report.read_text())
+        self.assertIn("**Decision**: applied", self.report.read_text())
 
-    def test_reassessment_replaces_a_quoting_justification(self) -> None:
+    def test_reassessment_replaces_a_quoting_analysis(self) -> None:
         """An assessment that quotes something is replaced whole, quote included."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
@@ -828,16 +881,54 @@ class WaveTest(WaveFixture):
         )
         self.decide(identifier)
         text = self.report.read_text()
-        self.assertIn("**Decision**: applied — as proposed", text)
+        self.assertIn("**Decision**: applied", text)
         self.assertIn("#### C9 (run 3, item 1)", text)
 
     def test_a_fenced_decision_does_not_decide_the_item(self) -> None:
         """A decision line inside a fenced sample does not stand for the user's decision."""
         self.complete_wave()
         first, second = self.imported("correctness")
-        self.assess(
-            first, stdin="Like:\n\n```markdown\n**Decision**: applied — why\n```"
+        self.assess(first, stdin="Like:\n\n```markdown\n**Decision**: applied\n```")
+        self.assess(second)
+        self.run_cli("report", "format", self.report)
+        with self.assertRaisesRegex(SystemExit, f"Item {first} .* has no decision"):
+            self.run_cli("init", self.review_dir, "B")
+
+    def test_a_fenced_decision_leaves_the_item_open(self) -> None:
+        """An analysis quoting a decision keeps the item assessable, the real decision going below it."""
+        self.capture("correctness", 1)
+        identifier = self.imported("correctness")[0]
+        analysis = "Like:\n\n```markdown\n**Decision**: applied\n```"
+        self.assess(identifier, stdin=analysis)
+        self.assess(identifier, stdin=analysis)
+        self.decide(identifier)
+        self.assertIn(
+            "**Proposal**: apply\n\n**Decision**: applied\n\n**Reasoning**:\n\n"
+            "as proposed",
+            self.report.read_text(),
         )
+
+    def test_an_analysis_reading_as_a_decision_leaves_the_item_open(self) -> None:
+        """An analysis stating a decision in its own prose keeps the item assessable, and keeps its text."""
+        self.capture("correctness", 1)
+        identifier = self.imported("correctness")[0]
+        analysis = "Wave 1 said:\n\n**Decision**: applied\n\nwhich no longer holds."
+        self.assess(identifier, stdin=analysis)
+        self.assess(identifier, stdin=analysis)
+        self.decide(identifier)
+        text = self.report.read_text()
+        self.assertIn("which no longer holds.", text)
+        self.assertIn(
+            "**Proposal**: apply\n\n**Decision**: applied\n\n**Reasoning**:\n\n"
+            "as proposed",
+            text,
+        )
+
+    def test_an_analysis_reading_as_a_decision_leaves_the_wave_open(self) -> None:
+        """A decision line an analysis writes does not stand for the user's decision."""
+        self.complete_wave()
+        first, second = self.imported("correctness")
+        self.assess(first, stdin="Once decided:\n\n**Decision**: applied")
         self.assess(second)
         self.run_cli("report", "format", self.report)
         with self.assertRaisesRegex(SystemExit, f"Item {first} .* has no decision"):
@@ -893,7 +984,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_assess_code_spans_a_tag_in_its_prose(self) -> None:
-        """A tag named in an option or a justification reaches the report as a code span."""
+        """A tag named in an option or an analysis reaches the report as a code span."""
         self.capture("correctness", 1)
         self.assess(
             self.imported("correctness")[0],
@@ -908,23 +999,27 @@ class WaveTest(WaveFixture):
         self.assertIn("- (a) give the pack one closed `<details>` fold\n", text)
 
     def test_decide(self) -> None:
-        """A decision needs an assessment, reads stdin, and links the ids in its reason."""
+        """A decision needs an assessment, reads stdin, and links the ids in its reasoning."""
         self.capture("correctness", 1)
         self.imported("correctness")
         self.assert_cli_error(
             "item", "decide", self.report, "C1", "--verdict", "applied", stdin="x"
         )
         self.assess("C1", stdin="Confirmed.")
-        self.decide("C1", "applied-with-changes", "folded into C1's fix")
+        self.decide(
+            "C1",
+            "applied-with-changes",
+            "folded into C1's fix\n\nthe cleanup it called for followed",
+        )
         text = self.report.read_text()
         self.assertIn(
-            "**Decision**: applied with changes — folded into "
-            "[C1](#c1-run-1-item-1)'s fix\n",
+            "**Decision**: applied with changes\n\n**Reasoning**:\n\nfolded into "
+            "[C1](#c1-run-1-item-1)'s fix\n\nthe cleanup it called for followed\n",
             text,
         )
 
     def test_blank_prose_is_refused(self) -> None:
-        """A justification or a reason made of whitespace is refused, and nothing is written."""
+        """An analysis or a reasoning made of whitespace is refused, and nothing is written."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         before = self.report.read_text()
@@ -962,7 +1057,8 @@ class WaveTest(WaveFixture):
         self.assertNotIn("as proposed", text)
         self.assertEqual(text.count("**Decision**"), 1)
         self.assertIn(
-            "**Proposal**: apply\n\n**Decision**: declined — reverted afterwards\n",
+            "**Proposal**: apply\n\n**Decision**: declined\n\n"
+            "**Reasoning**:\n\nreverted afterwards\n",
             text,
         )
 
@@ -1046,7 +1142,7 @@ class WaveTest(WaveFixture):
         self.decide(first)
         lines = self.report.read_text().splitlines()
         self.assertIn("  - [C1 / major / holds, apply](#c1-run-1-item-1)", lines)
-        self.assertIn("**Decision**: applied — as proposed", lines)
+        self.assertIn("**Decision**: applied", lines)
 
     def test_format_waits_for_the_chains(self) -> None:
         """A chain in flight, one that never ran, and one due another run all block it."""
@@ -1237,12 +1333,9 @@ class WaveTest(WaveFixture):
         self.second_wave()
         text = self.report.read_text()
         self.assertEqual(text.count("## Items"), 1)
+        self.assertIn("**Proposal**: apply\n\n**Decision**: applied\n", text)
         self.assertIn(
-            "**Proposal**: apply\n\n**Decision**: applied — as proposed\n", text
-        )
-        self.assertIn(
-            "**Proposal**: apply\n\n**Decision**: applied with changes — as proposed\n",
-            text,
+            "**Proposal**: apply\n\n**Decision**: applied with changes\n", text
         )
 
     def test_decide_writes_above_the_footer(self) -> None:
@@ -1253,7 +1346,10 @@ class WaveTest(WaveFixture):
         self.decide(identifiers[-1])
         lines = self.report.read_text().splitlines()
         self.assertTrue(lines[-1].startswith("<p "))
-        self.assertEqual(lines[-3], "**Decision**: applied — as proposed")
+        self.assertEqual(
+            lines[-7:-1],
+            ["**Decision**: applied", "", "**Reasoning**:", "", "as proposed", ""],
+        )
 
     def test_an_empty_capture_is_a_completed_run(self) -> None:
         """A run that printed nothing is complete, having found no item."""
@@ -1351,6 +1447,27 @@ class ChainRunTest(WaveFixture):
         self.assertEqual(list(self.chain("correctness").iterdir()), [rejected])
         self.assertEqual(rejected.read_text(), "1. no bold title\n")
         self.assertIn(str(rejected), str(caught.exception))
+
+    def test_a_capture_numbering_no_item_is_kept_for_repair(self) -> None:
+        """A review whose items carry no number is refused, not read as a run that found nothing."""
+        unnumbered = ONE_ITEM.replace("1. ", "#### ")
+        with self.assertRaises(SystemExit) as caught:
+            self.run_chain("correctness", output=unnumbered)
+        rejected = Path(self.chain("correctness"), f"run1.md{review.REJECTED_SUFFIX}")
+        self.assertEqual(rejected.read_text(), unnumbered)
+        self.assertIn("outside any numbered item", str(caught.exception))
+
+    def test_a_capture_numbering_one_of_two_items_is_kept_for_repair(self) -> None:
+        """A finding the capture leaves unnumbered is refused, not folded into the item above it."""
+        with self.assertRaises(SystemExit) as caught:
+            self.run_chain("correctness", output=f"{ONE_ITEM}\n{SECOND_FINDING}")
+        self.assertIn("more than one", str(caught.exception))
+
+    def test_a_capture_opening_on_an_unnumbered_item_is_kept_for_repair(self) -> None:
+        """A finding above the first numbered one is refused, not dropped from the review."""
+        with self.assertRaises(SystemExit) as caught:
+            self.run_chain("correctness", output=f"{SECOND_FINDING}\n{ONE_ITEM}")
+        self.assertIn("outside any numbered item", str(caught.exception))
 
     def test_a_rejected_capture_does_not_count_as_a_run(self) -> None:
         """The wave still reads, and the chain retries the run the rejected output failed."""

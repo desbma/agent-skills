@@ -89,7 +89,15 @@ DECISION_RE = re.compile(r"\*\*Decision\*\*: (applied with changes|applied|decli
 REVIEWER_ITEM_RE = re.compile(r"\s{0,3}(?:#{1,6}\s+)?(\d+)[.)]\s")
 ITEM_TITLE_RE = re.compile(r"\*\*[^*]+\*\*")
 ITEM_SEVERITY_RE = re.compile(r"\*\*Severity\*\*: (critical|major|minor)\s*$")
-ITEM_DELTA_RE = re.compile(r"\*\*Estimated delta\*\*: \S")
+ITEM_ISSUE_RE = re.compile(r"\*\*Issue\*\*:\s*$")
+ITEM_PROPOSED_CHANGE_RE = re.compile(r"\*\*Proposed change\*\*:\s*$")
+ITEM_DELTA_RE = re.compile(r"\*\*Estimated delta\*\*: [-+]?\d.*\blines?\b")
+ITEM_LABELS = (
+    ("severity", ITEM_SEVERITY_RE, "**Severity**: <critical, major or minor>", False),
+    ("issue", ITEM_ISSUE_RE, "**Issue**:", True),
+    ("proposed change", ITEM_PROPOSED_CHANGE_RE, "**Proposed change**:", True),
+    ("estimated delta", ITEM_DELTA_RE, "**Estimated delta**: <count> lines", False),
+)
 FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})")
 ATX_HEADING_RE = re.compile(r" {0,3}#{1,6}(?:[ \t]+|$)")
 
@@ -400,25 +408,52 @@ def reviewer_items(text: str) -> dict[int, str]:
 
 
 def check_reviewer_item(item: str, capture: Path, number: int) -> None:
-    """Fail unless the item carries the title, severity and delta the review format fixes."""
+    """Fail unless the item carries the title, the labels and the blocks the review format fixes."""
     lines = item.splitlines()
+    structural = structural_lines(lines)
+    blank = [not line.strip() for line in lines]
     where = f"Item {number} of {capture.name.removesuffix(RUNNING_SUFFIX)}"
     if ITEM_TITLE_RE.match(lines[0]) is None:
         raise SystemExit(f"{where} does not open with a bold title")
-    severities = [
-        index for index, line in enumerate(lines) if ITEM_SEVERITY_RE.match(line)
-    ]
-    if not severities:
-        raise SystemExit(f"{where} has no severity line")
-    if any(lines[index - 1].strip() for index in severities):
-        raise SystemExit(f"{where} does not put its severity in a paragraph of its own")
-    if not any(ITEM_DELTA_RE.match(line) for line in lines):
-        raise SystemExit(f"{where} has no estimated delta")
+    for name, pattern, form, below in ITEM_LABELS:
+        labelled = [index for index, line in structural if pattern.match(line.lstrip())]
+        if not labelled:
+            raise SystemExit(f'{where} has no "{form}" line')
+        if len(labelled) > 1:
+            raise SystemExit(f'{where} has more than one "{form}" line')
+        index = labelled[0]
+        if not (index == 0 or blank[index - 1]) or not (
+            index + 1 == len(lines) or blank[index + 1]
+        ):
+            raise SystemExit(
+                f"{where} does not put its {name} in a paragraph of its own"
+            )
+        if below:
+            follows = next((line for line in lines[index + 1 :] if line.strip()), "")
+            if not follows or any(
+                other.match(follows.lstrip()) for _, other, _, _ in ITEM_LABELS
+            ):
+                raise SystemExit(f"{where} says nothing under its {name}")
 
 
 def check_capture(capture: Path) -> None:
-    """Fail unless every item of the capture carries the fields the review format fixes."""
-    for number, item in reviewer_items(capture.read_text()).items():
+    """Fail unless every item label sits inside a numbered item, each carrying the fields the review format fixes."""
+    text = capture.read_text()
+    name = capture.name.removesuffix(RUNNING_SUFFIX)
+    numbered = {
+        index
+        for start, end in reviewer_item_spans(text).values()
+        for index in range(start, end)
+    }
+    for index, line in structural_lines(text.splitlines()):
+        if index not in numbered and any(
+            pattern.match(line.lstrip()) for _, pattern, _, _ in ITEM_LABELS
+        ):
+            raise SystemExit(
+                f"{name} carries an item label outside any numbered item "
+                f"(line {index + 1})"
+            )
+    for number, item in reviewer_items(text).items():
         check_reviewer_item(item, capture, number)
 
 
@@ -463,6 +498,24 @@ def structural_lines(lines: list[str]) -> list[tuple[int, str]]:
         for index, (line, outside) in enumerate(zip(lines, outside_fences(lines)))
         if outside
     ]
+
+
+def decision_index(lines: list[str]) -> int | None:
+    """Find the index of an item's decision line, below the proposal its assessment ends on."""
+    structural = structural_lines(lines)
+    proposed = next(
+        (index for index, line in structural if PROPOSAL_RE.match(line)), None
+    )
+    if proposed is None:
+        return None
+    return next(
+        (
+            index
+            for index, line in structural
+            if index > proposed and DECISION_RE.match(line)
+        ),
+        None,
+    )
 
 
 def heading_domain(line: str) -> Domain | None:
@@ -629,14 +682,18 @@ def decided_counts(report: Path) -> dict[tuple[Domain, int], list[int]]:
     """Count [findings, applied, applied with changes] per (domain, run) of a wave report."""
     counts: dict[tuple[Domain, int], list[int]] = {}
     pending: tuple[str, tuple[Domain, int]] | None = None
+    proposed = False
     for _, line in structural_lines(report.read_text().splitlines()):
         if heading := ITEM_HEADING_RE.match(line):
             if pending is not None:
                 raise SystemExit(f"Item {pending[0]} in {report.name} has no decision")
             key = (PREFIX_TO_DOMAIN[heading.group(1)], int(heading.group(3)))
             pending = (heading.group(1) + heading.group(2), key)
+            proposed = False
             counts.setdefault(key, [0, 0, 0])[0] += 1
-        elif (decision := DECISION_RE.match(line)) and pending is not None:
+        elif PROPOSAL_RE.match(line):
+            proposed = True
+        elif (decision := DECISION_RE.match(line)) and pending is not None and proposed:
             counted = counts[pending[1]]
             if decision.group(1) == "applied":
                 counted[1] += 1
@@ -1075,14 +1132,14 @@ def proposal_lines(args: argparse.Namespace) -> list[str]:
 
 
 def cmd_item_assess(args: argparse.Namespace) -> None:
-    """Write the claim, its justification and the proposal below a quoted item."""
+    """Write the claim, its analysis and the proposal below a quoted item."""
     proposal = proposal_lines(args)
-    justification = prose("justification")
+    analysis = prose("analysis")
 
     metadata = read_metadata(args.report)
     lines = read_lines(args.report)
     start, end = item_span(lines, args.id)
-    if any(DECISION_RE.match(line) for line in lines[start:end]):
+    if decision_index(lines[start:end]) is not None:
         raise SystemExit(f"Item {args.id} is already decided")
     quote_start = next(
         (index for index in range(start, end) if lines[index].startswith(">")), None
@@ -1096,7 +1153,9 @@ def cmd_item_assess(args: argparse.Namespace) -> None:
     block = [
         f"**Claim**: {args.claim}{severity}",
         "",
-        *justification.splitlines(),
+        "**Analysis**:",
+        "",
+        *analysis.splitlines(),
         "",
         *proposal,
     ]
@@ -1110,20 +1169,27 @@ def cmd_item_assess(args: argparse.Namespace) -> None:
 
 def cmd_item_decide(args: argparse.Namespace) -> None:
     """Record the user's decision below an assessed item."""
-    text = prose("reason")
+    reasoning = prose("reasoning")
     metadata = read_metadata(args.report)
     lines = read_lines(args.report)
     start, end = item_span(lines, args.id)
-    if not any(PROPOSAL_RE.match(line) for line in lines[start:end]):
+    item = lines[start:end]
+    if not any(PROPOSAL_RE.match(line) for _, line in structural_lines(item)):
         raise SystemExit(f"Item {args.id} has no assessment")
-    decision = next(
-        (index for index in range(start, end) if DECISION_RE.match(lines[index])), end
-    )
-    reason = render_prose(
-        [f"**Decision**: {args.verdict} — {text}"], anchor_targets(metadata)
+    decided = decision_index(item)
+    decision = end if decided is None else start + decided
+    block = render_prose(
+        [
+            f"**Decision**: {args.verdict}",
+            "",
+            "**Reasoning**:",
+            "",
+            *reasoning.splitlines(),
+        ],
+        anchor_targets(metadata),
     )
     kept = lines[:decision]
-    decided = splice(kept, len(kept), reason)
+    decided = splice(kept, len(kept), block)
     write_lines(args.report, decided + ([""] + lines[end:] if lines[end:] else []))
 
 

@@ -51,19 +51,29 @@ For each item:
 - give it a number, so it can be referenced unambiguously
 - open it with a title line: a bold title of a few words naming the item, then an em dash and the code it bears on
 - follow it with the severity, in a paragraph of its own: `**Severity**: critical`, `**Severity**: major` or `**Severity**: minor`
+- state what is wrong under `**Issue**:`, alone in a paragraph of its own, with the prose and any snippet of the current code below it
+- state what to do under `**Proposed change**:`, alone in a paragraph of its own too, with the prose and the code snippets that show it below; when the item rewrites existing code, showing it as a before/after pair is encouraged, as it reads better than the proposed code alone — use it where it helps, not for items that only add code
+- close it with the estimated line count delta, in a paragraph of its own after any code snippet
 
-  ```markdown
+  ````markdown
   **Make the shared run timestamp timezone-independent** — `tests/support.py:18-19`
 
   **Severity**: major
+
+  **Issue**:
+
+  `support.NOW` is read from the local clock, so a run in another zone compares its rows against stamps a day off.
+
+  **Proposed change**:
+
+  Build it in UTC:
+
+  ```python
+  NOW = datetime.datetime.now(datetime.UTC)
   ```
 
-- show code snippets for the suggested change; when the item rewrites existing code, showing it as a before/after pair is encouraged, as it reads better than the proposed code alone — use it where it helps, not for items that only add code
-- close it with the estimated line count delta, in a paragraph of its own after any code snippet
-
-  ```markdown
-  **Estimated delta**: -8 lines
-  ```
+  **Estimated delta**: 0 lines
+  ````
 
 The references save the reader a search: the file and the lines the item turns on, one per place when it spans several. An item with no definite site — documentation a change never wrote, a pattern spread across the revision — carries the title alone, without the em dash.
 
