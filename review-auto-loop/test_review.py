@@ -87,11 +87,11 @@ class RawReviewTest(unittest.TestCase):
     """Reading items out of a reviewer capture."""
 
     def test_spans_ignore_fenced_lines(self) -> None:
-        """A numbered line inside a code fence does not open an item."""
+        """Skip a numbered line inside a code fence instead of opening an item."""
         self.assertEqual(sorted(review.reviewer_item_spans(CAPTURE)), [1, 2])
 
     def test_item_is_dedented_and_unmarked(self) -> None:
-        """An item loses its list marker and the indentation of its continuation."""
+        """Strip an item's list marker and the indentation of its continuation."""
         item = review.reviewer_items(CAPTURE)[1]
         self.assertTrue(item.startswith("**Bound the layer walk** — `src/build.rs"))
         self.assertIn("\n**Severity**: major\n", item)
@@ -99,7 +99,7 @@ class RawReviewTest(unittest.TestCase):
         self.assertTrue(item.endswith("**Estimated delta**: +8 lines"))
 
     def test_nested_numbers_are_not_items(self) -> None:
-        """A numbered list inside an item does not open one."""
+        """Keep a numbered list inside an item from opening one."""
         text = "1. **First**\n\n   1. read it\n   2. write it\n\n2. **Second**"
         self.assertEqual(sorted(review.reviewer_item_spans(text)), [1, 2])
         self.assertTrue(review.reviewer_items(text)[2].startswith("**Second**"))
@@ -118,7 +118,7 @@ class RawReviewTest(unittest.TestCase):
         self.assertEqual(sorted(review.reviewer_item_spans(text)), [1, 2])
 
     def test_format_checks(self) -> None:
-        """An item is rejected without a title, without a label, with one twice, or with one out of its own paragraph."""
+        """Reject an item without a title, without a label, with one twice, or with one out of its own paragraph."""
         capture = Path("run1.md")
         review.check_reviewer_item(GOOD_ITEM, capture, 1)
         for broken in (
@@ -141,7 +141,7 @@ class RawReviewTest(unittest.TestCase):
                 review.check_reviewer_item(broken, capture, 1)
 
     def test_format_checks_accept_every_delta_form(self) -> None:
-        """A zero count, a singular unit, and a range with a qualifier are all accepted."""
+        """Accept a zero count, a singular unit, and a range carrying a qualifier."""
         capture = Path("run1.md")
         for delta in (
             "0 lines",
@@ -151,7 +151,7 @@ class RawReviewTest(unittest.TestCase):
             review.check_reviewer_item(GOOD_ITEM.replace("+1 lines", delta), capture, 1)
 
     def test_format_checks_name_the_form_they_want(self) -> None:
-        """A label written in another shape is reported as the form the item lacks, not as a missing block."""
+        """Report a label written in another shape as the form the item lacks, not as a missing block."""
         capture = Path("run1.md")
         for old, new, form in (
             ("major", "high", "**Severity**: <critical, major or minor>"),
@@ -168,7 +168,7 @@ class RawReviewTest(unittest.TestCase):
             self.assertIn(f'"{form}"', str(caught.exception))
 
     def test_format_checks_read_the_labels_outside_fences(self) -> None:
-        """A label inside a fenced sample is neither the item's own nor a substitute for it."""
+        """Take a label inside a fenced sample as neither the item's own nor a substitute for it."""
         capture = Path("run1.md")
         fence = "```markdown\n**Issue**:\n\n**Estimated delta**: +1 lines\n```"
         sample = GOOD_ITEM.replace(CHANGE, f"**Proposed change**:\n\n{fence}")
@@ -181,11 +181,11 @@ class RawReviewTest(unittest.TestCase):
                 review.check_reviewer_item(broken, capture, 1)
 
     def test_quote(self) -> None:
-        """Every line takes the blockquote prefix, blank ones becoming a bare marker."""
+        """Prefix every line with the blockquote marker, a blank one becoming a bare marker."""
         self.assertEqual(review.quote("a\n\nb"), ["> a", ">", "> b"])
 
     def test_quote_leaves_a_fenced_block_alone(self) -> None:
-        """A fenced block keeps its tags and its hash lines, the prose around it neutralized."""
+        """Keep a fenced block's tags and hash lines, neutralizing the prose around it."""
         self.assertEqual(
             review.quote("A <details> fold.\n\n```python\n# a <details> fold\n```"),
             [
@@ -198,7 +198,7 @@ class RawReviewTest(unittest.TestCase):
         )
 
     def test_quote_neutralizes_markup(self) -> None:
-        """A heading loses its marker, and the HTML around it never reaches the report live."""
+        """Strip a heading's marker, and keep the HTML around it from reaching the report live."""
         for item, quoted in (
             ("## A <details> fold", "> A `<details>` fold"),
             ("##\tA <details> fold", "> A `<details>` fold"),
@@ -220,11 +220,11 @@ class RenderProseTest(unittest.TestCase):
     """Linking the item ids mentioned in prose, and code-spanning the tags it names."""
 
     def render(self, line: str) -> str:
-        """The line after the prose pass."""
+        """Return the line after the prose pass."""
         return review.render_prose([line], TARGETS)[0]
 
     def test_known_ids_become_links(self) -> None:
-        """An id with a heading in the change links to it, across reports too."""
+        """Link an id with a heading in the change to it, across reports too."""
         self.assertEqual(self.render("Same as C7."), "Same as [C7](#c7-run-2-item-1).")
         self.assertEqual(self.render("See R2"), "See [R2](wave1.md#r2-run-1-item-2)")
 
@@ -249,7 +249,7 @@ class RenderProseTest(unittest.TestCase):
             self.assertEqual(self.render(line), line)
 
     def test_tags_become_code_spans(self) -> None:
-        """A tag the prose names is code-spanned, so the renderer displays it."""
+        """Code-span a tag the prose names, so the renderer displays it."""
         self.assertEqual(
             self.render("one closed <details> before the index"),
             "one closed `<details>` before the index",
@@ -266,11 +266,11 @@ class RenderProseTest(unittest.TestCase):
             self.assertEqual(self.render(line), rendered)
 
     def test_an_opening_angle_alone_is_escaped(self) -> None:
-        """An angle no tag closes is escaped, so a tag split over two lines cannot open one."""
+        """Escape an angle no tag closes, so a tag split over two lines cannot open one."""
         self.assertEqual(self.render("a <details"), "a &lt;details")
 
     def test_angle_spans_that_are_no_tags(self) -> None:
-        """An autolink and a bare comparison are left alone."""
+        """Leave an autolink and a bare comparison alone."""
         for line in (
             "<user@example.test>",
             "the <T: Clone> bound",
@@ -280,7 +280,7 @@ class RenderProseTest(unittest.TestCase):
             self.assertEqual(self.render(line), line)
 
     def test_a_spanned_tag_is_stable(self) -> None:
-        """A second pass leaves an already spanned tag alone."""
+        """Leave an already spanned tag alone on a second pass."""
         once = self.render("one closed <details> fold")
         self.assertEqual(self.render(once), once)
 
@@ -299,7 +299,7 @@ class JjQueryTest(unittest.TestCase):
     """The jj queries behind the reviewed change and its diff stat."""
 
     def test_diff_summary_is_the_last_stat_line(self) -> None:
-        """The diff stat comes back as its last line, for the revision asked."""
+        """Return the diff stat as its last line, for the revision asked."""
         stat = "M review\n 2 files changed, 30 insertions(+)"
         with mock.patch.object(review, "jj_output", return_value=stat) as jj_output:
             self.assertEqual(
@@ -308,7 +308,7 @@ class JjQueryTest(unittest.TestCase):
         self.assertIn("@-", jj_output.call_args.args[0])
 
     def test_a_single_change(self) -> None:
-        """A revision matching one change gives its id, and reaches the jj command."""
+        """Give the id of a revision matching one change, and reach the jj command with it."""
         with mock.patch.object(
             review, "jj_output", return_value=f"{CHANGE_ID}\n"
         ) as jj_output:
@@ -316,7 +316,7 @@ class JjQueryTest(unittest.TestCase):
         self.assertIn("@-", jj_output.call_args.args[0])
 
     def test_anything_else(self) -> None:
-        """A revset matching several changes, or none, is refused."""
+        """Refuse a revset matching several changes, or none."""
         for out in (f"{CHANGE_ID}\n{CHANGE_ID}\n", ""):
             with mock.patch.object(review, "jj_output", return_value=out):
                 self.assertRaises(SystemExit, review.resolve_change_id, "@ | @-")
@@ -326,7 +326,7 @@ class AssessHelpTest(unittest.TestCase):
     """The help of the assess command, where a refused invocation looks next."""
 
     def test_it_lists_every_form(self) -> None:
-        """Every claim and proposal pair is spelled out, with the tail it takes."""
+        """Spell out every claim and proposal pair, with the tail it takes."""
         out = io.StringIO()
         with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             review.build_parser().parse_args(["item", "assess", "--help"])
@@ -351,7 +351,7 @@ class CapsTest(unittest.TestCase):
     """Reading the domain caps of a wave off the command line."""
 
     def test_caps_take_the_canonical_domain_order(self) -> None:
-        """The caps come back in canonical domain order, whatever the order given."""
+        """Return the caps in canonical domain order, whatever the order given."""
         self.assertEqual(
             list(review.parse_domain_caps(["readability=3", "correctness=2"]).items()),
             [("correctness", 2), ("readability", 3)],
@@ -370,7 +370,7 @@ class CapsTest(unittest.TestCase):
         self.assertEqual(review.parse_domain_caps(["docs=1"]), {"docs": 1})
 
     def test_rejections(self) -> None:
-        """A wave without a domain, one fully excluded and malformed pairs are refused."""
+        """Refuse a wave without a domain, one fully excluded, and malformed pairs."""
         for pairs in (
             [],
             ["correctness=0", "readability=0"],
@@ -382,7 +382,7 @@ class CapsTest(unittest.TestCase):
                 review.parse_domain_caps(pairs)
 
     def test_loop_caps_cover_every_domain(self) -> None:
-        """The loop caps of a review comment read back in canonical order."""
+        """Read the loop caps of a review comment back in canonical order."""
         self.assertEqual(
             list(
                 review.parse_loop_caps(
@@ -400,12 +400,12 @@ class LoopCapsTest(unittest.TestCase):
     """Deriving the caps of a loop from the size of the reviewed change."""
 
     def caps(self, summary: str) -> dict[str, int]:
-        """The loop caps derived from a diff stat summary."""
+        """Derive the loop caps from a diff stat summary."""
         with mock.patch.object(review, "diff_summary", return_value=summary):
             return review.derive_loop_caps(CHANGE_ID)
 
     def test_the_code_domains_scale_with_the_insertions(self) -> None:
-        """The correctness and readability caps follow the lines the change adds."""
+        """Scale the correctness and readability caps with the lines the change adds."""
         for insertions, cap in (
             (0, 1),
             (99, 1),
@@ -420,11 +420,11 @@ class LoopCapsTest(unittest.TestCase):
             )
 
     def test_a_change_that_only_deletes_adds_nothing(self) -> None:
-        """A summary without an insertion count reads as no line added."""
+        """Read a summary without an insertion count as no line added."""
         self.assertEqual(self.caps("1 file changed, 40 deletions(-)")["correctness"], 1)
 
     def test_an_unreadable_summary_is_refused(self) -> None:
-        """A last diff stat line that is not a summary fails instead of counting zero."""
+        """Fail on a last diff stat line that is not a summary, instead of counting zero."""
         with self.assertRaises(SystemExit):
             self.caps("M review-auto-loop/review")
 
@@ -450,7 +450,7 @@ class DeltaTextTest(unittest.TestCase):
     """Line counts as a proposal states them."""
 
     def test_it_signs_every_count_but_zero(self) -> None:
-        """A count carries its sign unless it is zero, and its unit follows its magnitude."""
+        """Sign every count but zero, and follow its magnitude with the unit."""
         for delta, rendered in ((4, "+4 lines"), (-1, "-1 line"), (0, "0 lines")):
             self.assertEqual(review.delta_text(delta), rendered)
 
@@ -520,7 +520,7 @@ class WaveFixture(CliFixture):
         return Path(self.run_cli("init", *argv).splitlines()[1])
 
     def chain(self, domain: str) -> Path:
-        """The chain dir of a domain of the wave."""
+        """Return the chain dir of a domain of the wave."""
         return Path(self.review_dir, f"{REV}-wave1-{domain}")
 
     def capture(self, domain: str, run: int, text: str = CAPTURE) -> None:
@@ -644,14 +644,14 @@ class WaveTest(WaveFixture):
             self.assertTrue(Path(self.review_dir, f"{REV}-wave1-{domain}").is_dir())
 
     def test_init_names_the_change_it_resolved(self) -> None:
-        """The change comes first, so later waves can pin the loop to it."""
+        """Print the change first, so later waves can pin the loop to it."""
         review_dir = Path(self.review_dir, "named")
         review_dir.mkdir()
         out = self.run_cli("init", review_dir, "A", "--revision", REVISION)
         self.assertEqual(out.splitlines()[0], CHANGE_ID)
 
     def test_init_defaults_to_the_latest_non_empty_change(self) -> None:
-        """A wave opened without a revision reviews the latest non-empty change."""
+        """Review the latest non-empty change when a wave opens without a revision."""
         review_dir = Path(self.review_dir, "default")
         review_dir.mkdir()
         self.run_cli("init", review_dir, "A")
@@ -660,11 +660,11 @@ class WaveTest(WaveFixture):
         )
 
     def test_init_numbers_the_waves(self) -> None:
-        """The wave number follows the reports the review dir already holds."""
+        """Number the wave after the reports the review dir already holds."""
         self.assertRegex(self.second_wave().name, rf"{REV}-wave2-\d{{12}}\.md")
 
     def test_init_waits_for_the_previous_wave(self) -> None:
-        """A wave waits for the preceding report's format, then for its decisions."""
+        """Wait for the preceding report's format, then for its decisions."""
         self.complete_wave()
         with self.assertRaisesRegex(SystemExit, "Wave 1 is not formatted yet"):
             self.run_cli("init", self.review_dir, "B")
@@ -674,20 +674,20 @@ class WaveTest(WaveFixture):
             self.run_cli("init", self.review_dir, "B")
 
     def test_init_repeats_a_phase_with_lower_caps(self) -> None:
-        """A repeated phase runs on the loop caps lowered by one, the loop caps standing."""
+        """Run a repeated phase on the loop caps lowered by one, the loop caps standing."""
         self.decided_second_wave()
         third = review.read_metadata(self.init(self.review_dir, "A", "--repeat"))
         self.assertEqual(third.domain_caps, {"correctness": 1, "readability": 1})
         self.assertEqual(third.loop_caps["correctness"], 2)
 
     def test_init_refuses_a_first_repeat(self) -> None:
-        """The first wave of a loop has no phase to repeat."""
+        """Refuse a repeat on the first wave of a loop, with no phase to repeat yet."""
         review_dir = Path(self.review_dir, "fresh")
         review_dir.mkdir()
         self.assert_cli_error("init", review_dir, "A", "--repeat")
 
     def test_a_later_cap_overrides_one_wave_alone(self) -> None:
-        """A cap given after the first wave leaves the loop caps alone."""
+        """Leave the loop caps alone on a cap given after the first wave."""
         self.decided_second_wave()
         third = review.read_metadata(
             self.init(self.review_dir, "A", "--cap", "correctness=4")
@@ -696,7 +696,7 @@ class WaveTest(WaveFixture):
         self.assertEqual(third.loop_caps["correctness"], 2)
 
     def test_init_skips_an_excluded_chain(self) -> None:
-        """A domain capped at zero gets no chain dir, and is not named."""
+        """Give a domain capped at zero no chain dir, and leave it unnamed."""
         review_dir = Path(self.review_dir, "excluded-chain")
         review_dir.mkdir()
         out = self.run_cli("init", review_dir, "B", "--cap", "docs=0")
@@ -705,7 +705,7 @@ class WaveTest(WaveFixture):
         self.assertFalse(Path(review_dir, f"{REV}-wave1-docs").exists())
 
     def test_init_takes_a_hand_picked_domain_list(self) -> None:
-        """A wave named by its domains runs them whatever phase groups each."""
+        """Run a wave named by its domains whatever phase groups each."""
         review_dir = Path(self.review_dir, "hand-picked")
         review_dir.mkdir()
         out = self.run_cli(
@@ -722,14 +722,14 @@ class WaveTest(WaveFixture):
             self.assertTrue(Path(review_dir, f"{REV}-wave1-{domain}").is_dir())
 
     def test_init_refuses_a_malformed_domain_list(self) -> None:
-        """An unknown domain, a repeated one, a phase inside a list and an empty name fail."""
+        """Fail on an unknown domain, a repeated one, a phase inside a list, and an empty name."""
         review_dir = Path(self.review_dir, "malformed")
         review_dir.mkdir()
         for domains in ("prose", "tests,tests", "A,B", "tests,", ""):
             self.assert_cli_error("init", review_dir, domains)
 
     def test_import_creates_sections_in_canonical_order(self) -> None:
-        """The readability section follows the correctness one whatever the order of the calls."""
+        """Put the readability section after the correctness one whatever the order of the calls."""
         self.capture("readability", 1)
         self.capture("correctness", 1)
         self.assertEqual(self.imported("readability"), ["R1", "R2"])
@@ -751,7 +751,7 @@ class WaveTest(WaveFixture):
         self.assertIn(">", lines)
 
     def test_import_takes_the_whole_capture(self) -> None:
-        """Every item of the run lands in the report, its id printed on a line of its own."""
+        """Land every item of the run in the report, printing its id on a line of its own."""
         self.capture("correctness", 1)
         self.assertEqual(
             self.run_cli("item", "import", self.report, "correctness", 1).splitlines(),
@@ -761,7 +761,7 @@ class WaveTest(WaveFixture):
         self.assertEqual(self.imported("correctness", 2), ["C3"])
 
     def test_import_rejections(self) -> None:
-        """An unknown capture, an inactive domain, a second import and a broken item all fail."""
+        """Fail on an unknown capture, an inactive domain, a second import, and a broken item."""
         self.capture("correctness", 1)
         self.assert_cli_error("item", "import", self.report, "correctness", 2)
         self.assert_cli_error("item", "import", self.report, "tests", 1)
@@ -771,7 +771,7 @@ class WaveTest(WaveFixture):
         self.assert_cli_error("item", "import", self.report, "readability", 1)
 
     def test_a_broken_item_imports_nothing(self) -> None:
-        """A capture whose second item is malformed leaves the first one out too."""
+        """Leave the first item out too when a capture's second one is malformed."""
         self.capture(
             "correctness",
             1,
@@ -781,7 +781,7 @@ class WaveTest(WaveFixture):
         self.assertNotIn("###", self.report.read_text())
 
     def test_assess_writes_the_claim_and_proposal(self) -> None:
-        """The assessment lands below the quote, its analysis between the claim and the proposal, and prints nothing."""
+        """Write the assessment below the quote, its analysis between the claim and the proposal, and print nothing."""
         self.capture("correctness", 1)
         out = self.assess(
             self.imported("correctness")[0],
@@ -802,7 +802,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_assess_revises_the_estimate_of_an_apply(self) -> None:
-        """An apply states a delta only to revise the item's estimate."""
+        """Take a delta on an apply only as a revision of the item's estimate."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         self.assess(identifier, -2, stdin="The item over-counts its own fix.")
@@ -830,7 +830,7 @@ class WaveTest(WaveFixture):
         self.assertIn("> **Bound the layer walk**", text)
 
     def test_a_decided_item_is_not_reassessed(self) -> None:
-        """A decided item refuses a new assessment, its decision left as it stands."""
+        """Refuse a new assessment on a decided item, leaving its decision as it stands."""
         self.capture("correctness", 1)
         identifier = self.imported_assessed("correctness")[0]
         self.decide(identifier)
@@ -840,7 +840,7 @@ class WaveTest(WaveFixture):
         self.assertEqual(self.report.read_text(), decided)
 
     def test_an_assessment_may_hold_a_hash_line(self) -> None:
-        """A `#` line inside an analysis does not end the item."""
+        """Keep a `#` line inside an analysis from ending the item."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         self.assess(
@@ -850,7 +850,7 @@ class WaveTest(WaveFixture):
         self.assertIn("**Decision**: applied", self.report.read_text())
 
     def test_reassessment_replaces_a_quoting_analysis(self) -> None:
-        """An assessment that quotes something is replaced whole, quote included."""
+        """Replace an assessment that quotes something whole, quote included."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         self.assess(identifier, stdin="The reviewer writes:\n\n> a quoted line")
@@ -860,7 +860,7 @@ class WaveTest(WaveFixture):
         self.assertNotIn("> a quoted line", text)
 
     def test_a_prose_heading_does_not_end_a_section(self) -> None:
-        """The next item follows the previous one whose assessment holds a `##` line."""
+        """Put the next item after the previous one whose assessment holds a `##` line."""
         self.capture("correctness", 1)
         self.capture("correctness", 2, ONE_ITEM)
         self.assess(
@@ -873,7 +873,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_a_fenced_item_heading_does_not_end_an_item(self) -> None:
-        """An item heading inside a fenced sample leaves the assessment reachable and intact."""
+        """Leave the assessment reachable and intact under an item heading inside a fenced sample."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         self.assess(
@@ -885,7 +885,7 @@ class WaveTest(WaveFixture):
         self.assertIn("#### C9 (run 3, item 1)", text)
 
     def test_a_fenced_decision_does_not_decide_the_item(self) -> None:
-        """A decision line inside a fenced sample does not stand for the user's decision."""
+        """Refuse a decision line inside a fenced sample as the user's decision."""
         self.complete_wave()
         first, second = self.imported("correctness")
         self.assess(first, stdin="Like:\n\n```markdown\n**Decision**: applied\n```")
@@ -895,7 +895,7 @@ class WaveTest(WaveFixture):
             self.run_cli("init", self.review_dir, "B")
 
     def test_a_fenced_decision_leaves_the_item_open(self) -> None:
-        """An analysis quoting a decision keeps the item assessable, the real decision going below it."""
+        """Keep an item assessable under an analysis quoting a decision, the real decision going below it."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         analysis = "Like:\n\n```markdown\n**Decision**: applied\n```"
@@ -909,7 +909,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_an_analysis_reading_as_a_decision_leaves_the_item_open(self) -> None:
-        """An analysis stating a decision in its own prose keeps the item assessable, and keeps its text."""
+        """Keep an item assessable under an analysis stating a decision in its own prose, and keep its text."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         analysis = "Wave 1 said:\n\n**Decision**: applied\n\nwhich no longer holds."
@@ -925,7 +925,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_an_analysis_reading_as_a_decision_leaves_the_wave_open(self) -> None:
-        """A decision line an analysis writes does not stand for the user's decision."""
+        """Refuse a decision line an analysis writes as the user's decision."""
         self.complete_wave()
         first, second = self.imported("correctness")
         self.assess(first, stdin="Once decided:\n\n**Decision**: applied")
@@ -935,7 +935,7 @@ class WaveTest(WaveFixture):
             self.run_cli("init", self.review_dir, "B")
 
     def test_a_fenced_domain_heading_does_not_open_a_section(self) -> None:
-        """A domain heading inside a fenced sample does not take the next domain's items."""
+        """Keep a domain heading inside a fenced sample from taking the next domain's items."""
         self.capture("correctness", 1)
         self.capture("readability", 1, ONE_ITEM)
         self.assess(
@@ -946,7 +946,7 @@ class WaveTest(WaveFixture):
         self.assertEqual(self.report.read_text().count("### Readability"), 2)
 
     def test_assess_argument_rules(self) -> None:
-        """The parser takes a severity exactly where the claim calls for one, with the proposal's own tail."""
+        """Take a severity exactly where the claim calls for one, with the proposal's own tail."""
         self.capture("correctness", 1)
         base = ["item", "assess", self.report, self.imported("correctness")[0]]
         for extra in (
@@ -966,7 +966,7 @@ class WaveTest(WaveFixture):
             self.assert_cli_error(*base, *extra, stdin="prose")
 
     def test_assess_your_call_renders_its_options(self) -> None:
-        """A your-call proposal spells its options out as a lettered list, echoed under the item id."""
+        """Spell a your-call proposal's options out as a lettered list, echoed under the item id."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         out = self.assess(
@@ -984,7 +984,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_assess_code_spans_a_tag_in_its_prose(self) -> None:
-        """A tag named in an option or an analysis reaches the report as a code span."""
+        """Send a tag named in an option or an analysis to the report as a code span."""
         self.capture("correctness", 1)
         self.assess(
             self.imported("correctness")[0],
@@ -999,7 +999,7 @@ class WaveTest(WaveFixture):
         self.assertIn("- (a) give the pack one closed `<details>` fold\n", text)
 
     def test_decide(self) -> None:
-        """A decision needs an assessment, reads stdin, and links the ids in its reasoning."""
+        """Require an assessment, read stdin, and link the ids in the reasoning."""
         self.capture("correctness", 1)
         self.imported("correctness")
         self.assert_cli_error(
@@ -1019,7 +1019,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_blank_prose_is_refused(self) -> None:
-        """An analysis or a reasoning made of whitespace is refused, and nothing is written."""
+        """Refuse an analysis or a reasoning made of whitespace, and write nothing."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         before = self.report.read_text()
@@ -1063,7 +1063,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_report_format(self) -> None:
-        """The top part, the summary, the index and the links land in one pass, and the recap is printed."""
+        """Write the top part, the summary, the index and the links in one pass, and print the recap."""
         self.capture("correctness", 2, "Nothing to report.\n")
         self.capture("readability", 2, "Nothing to report.\n")
         self.complete_wave()
@@ -1132,7 +1132,7 @@ class WaveTest(WaveFixture):
         self.assertLess(summary, lines.index("## Items"))
 
     def test_a_revised_estimate_reaches_the_index_and_the_decision(self) -> None:
-        """An apply carrying a revised estimate formats, indexes, recaps and decides like a bare one."""
+        """Format, index, recap and decide an apply carrying a revised estimate like a bare one."""
         self.complete_wave()
         first, second = self.imported("correctness")
         self.assess(first, -2, stdin="The item over-counts its own fix.")
@@ -1145,7 +1145,7 @@ class WaveTest(WaveFixture):
         self.assertIn("**Decision**: applied", lines)
 
     def test_format_waits_for_the_chains(self) -> None:
-        """A chain in flight, one that never ran, and one due another run all block it."""
+        """Block on a chain in flight, on one that never ran, and on one due another run."""
         self.running("correctness", 1)
         self.capture("readability", 1, "Nothing to report.\n")
         with self.assertRaisesRegex(
@@ -1160,7 +1160,7 @@ class WaveTest(WaveFixture):
             self.run_cli("report", "format", self.report)
 
     def test_format_waits_for_the_summary(self) -> None:
-        """A missing change summary, and one still in flight, both block the format."""
+        """Block the format on a missing change summary, and on one still in flight."""
         self.complete_wave()
         self.imported_assessed("correctness")
         summary = self.write_summary()
@@ -1172,7 +1172,7 @@ class WaveTest(WaveFixture):
             self.run_cli("report", "format", self.report)
 
     def test_format_requires_every_item_assessed(self) -> None:
-        """Every captured item is in the report exactly once, with one assessment."""
+        """Require every captured item in the report exactly once, with one assessment."""
         self.complete_wave()
         with self.assertRaisesRegex(SystemExit, "exactly once"):
             self.run_cli("report", "format", self.report)
@@ -1189,7 +1189,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_findings_on_the_cap_run_are_complete(self) -> None:
-        """A chain that finds items on its last allowed run has run to its end."""
+        """Count a chain that finds items on its last allowed run as run to its end."""
         self.capture("correctness", 1, ONE_ITEM)
         self.capture("correctness", 2, ONE_ITEM)
         self.capture("readability", 1, "Nothing to report.\n")
@@ -1228,7 +1228,7 @@ class WaveTest(WaveFixture):
         self.assertIn("  - [C1 / major / holds, decline](#c1-run-1-item-1)", lines)
 
     def test_format_signs_the_report(self) -> None:
-        """A footer naming the skill and the time of the format closes the report."""
+        """Close the report with a footer naming the skill and the time of the format."""
         self.complete_wave()
         self.imported_assessed("correctness")
         self.run_cli("report", "format", self.report)
@@ -1249,7 +1249,7 @@ class WaveTest(WaveFixture):
         self.assertEqual([line for line in lines if line.startswith("<p ")], lines[-1:])
 
     def test_report_format_without_items(self) -> None:
-        """A wave that yielded nothing gets its top part, no index and no recap."""
+        """Give a wave that yielded nothing its top part, no index and no recap."""
         self.capture("correctness", 1, "No item to report.\n")
         self.capture("readability", 1, "No item to report.\n")
         self.write_summary()
@@ -1259,7 +1259,7 @@ class WaveTest(WaveFixture):
         self.assertNotIn("## Items", lines)
 
     def test_recap_counts_a_single_item(self) -> None:
-        """The item count of a one-item wave reads as a singular."""
+        """Read the item count of a one-item wave as a singular."""
         self.capture("correctness", 1, ONE_ITEM)
         self.capture("correctness", 2, "Nothing to report.\n")
         self.capture("readability", 1, "Nothing to report.\n")
@@ -1271,7 +1271,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_report_grid_is_right_aligned(self) -> None:
-        """Every column of the markdown grid carries a right-alignment marker."""
+        """Give every column of the markdown grid a right-alignment marker."""
         self.capture("correctness", 1, "No item to report.\n")
         self.capture("readability", 1, "No item to report.\n")
         self.write_summary()
@@ -1286,7 +1286,7 @@ class WaveTest(WaveFixture):
         self.assertTrue(all(cell.endswith(":") for cell in cells))
 
     def test_header_show(self) -> None:
-        """The header frames the wave title, its config, the diff stat and the run grid."""
+        """Frame the wave title, its config, the diff stat and the run grid in the header."""
         self.capture("correctness", 1)
         self.capture("readability", 1)
         self.running("readability", 2)
@@ -1298,7 +1298,7 @@ class WaveTest(WaveFixture):
         self.assertTrue(any(review.RUNNING_STR in line for line in out))
 
     def test_grid_is_ruled_not_boxed(self) -> None:
-        """The grid draws column rules and no box around itself."""
+        """Draw the grid's column rules, and no box around it."""
         self.capture("correctness", 1)
         self.capture("readability", 1)
         out = self.run_cli("header", "show", self.report, 1).splitlines()
@@ -1308,19 +1308,19 @@ class WaveTest(WaveFixture):
         self.assertFalse(any(set("╭╮╰╯├┤┬┴") & set(line) for line in out))
 
     def test_grid_rules_the_waves_apart(self) -> None:
-        """A rule runs below the domains and between two waves."""
+        """Run a rule below the domains and between two waves."""
         second = self.second_wave()
         out = self.run_cli("header", "show", second, 1).splitlines()
         self.assertEqual(sum(set(line) == {"─", "┼"} for line in out), 2)
 
     def test_grid_counts_a_past_wave_decisions(self) -> None:
-        """A past wave's cell counts the items it found and how many of its decisions applied."""
+        """Count in a past wave's cell the items it found and how many of its decisions applied."""
         second = self.second_wave()
         out = self.run_cli("header", "show", second, 1).splitlines()
         self.assertTrue(any("1+1/2" in line for line in out))
 
     def test_links_reach_a_past_wave_report(self) -> None:
-        """An id from a past wave links to its heading in that wave's own report."""
+        """Link an id from a past wave to its heading in that wave's own report."""
         second = self.second_wave()
         identifier = self.imported("tests", 1, second)[0]
         self.assess(identifier, stdin="Same as C1.", report=second)
@@ -1329,7 +1329,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_decide_after_formatting(self) -> None:
-        """A decision lands below its proposal on a report that carries its generated sections."""
+        """Land a decision below its proposal on a report that carries its generated sections."""
         self.second_wave()
         text = self.report.read_text()
         self.assertEqual(text.count("## Items"), 1)
@@ -1339,7 +1339,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_decide_writes_above_the_footer(self) -> None:
-        """A decision on the last item of a formatted report leaves the footer closing it."""
+        """Leave the footer closing a formatted report on a decision on its last item."""
         self.complete_wave()
         identifiers = self.imported_assessed("correctness")
         self.run_cli("report", "format", self.report)
@@ -1352,14 +1352,14 @@ class WaveTest(WaveFixture):
         )
 
     def test_an_empty_capture_is_a_completed_run(self) -> None:
-        """A run that printed nothing is complete, having found no item."""
+        """Count a run that printed nothing as complete, having found no item."""
         self.capture("correctness", 1, "")
         out = self.run_cli("header", "show", self.report, 1)
         self.assertNotIn(review.RUNNING_STR, out)
         self.assertIn(" Wave 1, run 1 — 1 total reviews", out.splitlines())
 
     def test_metadata_is_read_back(self) -> None:
-        """The report's comment carries the revision, the wave and the caps of the wave."""
+        """Carry the revision, the wave and its caps in the report's comment."""
         metadata = review.read_metadata(self.report)
         self.assertEqual(metadata.short_change_id, REV)
         self.assertEqual(metadata.change_id, CHANGE_ID)
@@ -1368,7 +1368,7 @@ class WaveTest(WaveFixture):
         self.assertEqual(metadata.loop_caps["tests"], 1)
 
     def test_metadata_rejections(self) -> None:
-        """A report without the comment, without loop caps, or disagreeing with its name, is refused."""
+        """Refuse a report without the comment, without loop caps, or disagreeing with its name."""
         stray = Path(self.review_dir, f"{REV}-wave3-202608261252.md")
         loop = "loop=correctness:1,readability:1,tests:1,docs:1"
         caps = "correctness=1 readability=1 -->\n"
@@ -1392,14 +1392,14 @@ class ChainRunTest(WaveFixture):
         )
 
     def test_it_captures_the_reviewer_output(self) -> None:
-        """The capture takes the run's name once the reviewer is through, and is named."""
+        """Name the capture after the run once the reviewer is through, and print its path."""
         capture = Path(self.chain("correctness"), "run1.md")
         self.assertEqual(self.run_chain("correctness").strip(), str(capture))
         self.assertEqual(capture.read_text(), ONE_ITEM)
         self.assertEqual(list(self.chain("correctness").iterdir()), [capture])
 
     def test_it_runs_the_reviewer_over_the_change(self) -> None:
-        """The reviewer runs from the repository root, on the change, over the chain dir."""
+        """Run the reviewer from the repository root, on the change, over the chain dir."""
         self.run_chain("readability")
         argv = self.spawn.call_args.args[0]
         self.assertEqual(argv[0], "pi")
@@ -1409,7 +1409,7 @@ class ChainRunTest(WaveFixture):
         self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
 
     def test_the_prompt_names_the_chain_dir_absolutely(self) -> None:
-        """The reviewer runs from the repository root, so a relative report must still reach it."""
+        """Expand a relative report to an absolute chain dir, for the reviewer at the repository root."""
 
         def reviewer(
             argv: list[str], **kwargs: Any
@@ -1426,7 +1426,7 @@ class ChainRunTest(WaveFixture):
         self.assertIn(str(self.chain("correctness")), spawn.call_args.args[0][-1])
 
     def test_a_marker_created_after_the_scan_stops_the_run(self) -> None:
-        """Two runs racing past the in-flight check do not share one capture."""
+        """Keep two runs racing past the in-flight check from sharing one capture."""
         marker = self.running("correctness", 1)
         marker.write_text("the winner's output")
         with (
@@ -1449,7 +1449,7 @@ class ChainRunTest(WaveFixture):
         self.assertIn(str(rejected), str(caught.exception))
 
     def test_a_capture_numbering_no_item_is_kept_for_repair(self) -> None:
-        """A review whose items carry no number is refused, not read as a run that found nothing."""
+        """Refuse a review whose items carry no number, instead of reading it as a run that found nothing."""
         unnumbered = ONE_ITEM.replace("1. ", "#### ")
         with self.assertRaises(SystemExit) as caught:
             self.run_chain("correctness", output=unnumbered)
@@ -1458,19 +1458,19 @@ class ChainRunTest(WaveFixture):
         self.assertIn("outside any numbered item", str(caught.exception))
 
     def test_a_capture_numbering_one_of_two_items_is_kept_for_repair(self) -> None:
-        """A finding the capture leaves unnumbered is refused, not folded into the item above it."""
+        """Refuse a finding the capture leaves unnumbered, instead of folding it into the item above."""
         with self.assertRaises(SystemExit) as caught:
             self.run_chain("correctness", output=f"{ONE_ITEM}\n{SECOND_FINDING}")
         self.assertIn("more than one", str(caught.exception))
 
     def test_a_capture_opening_on_an_unnumbered_item_is_kept_for_repair(self) -> None:
-        """A finding above the first numbered one is refused, not dropped from the review."""
+        """Refuse a finding above the first numbered one, instead of dropping it from the review."""
         with self.assertRaises(SystemExit) as caught:
             self.run_chain("correctness", output=f"{SECOND_FINDING}\n{ONE_ITEM}")
         self.assertIn("outside any numbered item", str(caught.exception))
 
     def test_a_rejected_capture_does_not_count_as_a_run(self) -> None:
-        """The wave still reads, and the chain retries the run the rejected output failed."""
+        """Keep the wave readable, and retry the run the rejected output failed."""
         with self.assertRaises(SystemExit):
             self.run_chain("correctness", output="1. no bold title\n")
         self.run_cli("header", "show", self.report, 1)
@@ -1480,14 +1480,14 @@ class ChainRunTest(WaveFixture):
         self.assertTrue(Path(chain, f"run1.md{review.REJECTED_SUFFIX}").is_file())
 
     def test_a_failed_run_leaves_nothing_behind(self) -> None:
-        """A reviewer exiting non-zero takes its exit code and leaves no capture."""
+        """Take the exit code of a reviewer exiting non-zero, and leave no capture."""
         with self.assertRaises(SystemExit) as caught:
             self.run_chain("correctness", status=3)
         self.assertEqual(caught.exception.code, 3)
         self.assertEqual(list(self.chain("correctness").iterdir()), [])
 
     def test_a_reviewer_that_never_starts_leaves_nothing_behind(self) -> None:
-        """A reviewer the system cannot spawn leaves no capture standing in for a run."""
+        """Leave no capture standing in for a run the system cannot spawn."""
         with (
             mock.patch.object(review, "jj_output", return_value="/repo\n"),
             mock.patch.object(review.subprocess, "run", side_effect=FileNotFoundError),
@@ -1497,19 +1497,19 @@ class ChainRunTest(WaveFixture):
         self.assertEqual(list(self.chain("correctness").iterdir()), [])
 
     def test_the_next_run_follows_the_captures(self) -> None:
-        """A second run of the chain writes the second capture."""
+        """Write the second capture on a second run of the chain."""
         self.run_chain("correctness")
         self.run_chain("correctness")
         self.assertTrue(Path(self.chain("correctness"), "run2.md").is_file())
 
     def test_refusals(self) -> None:
-        """An inactive domain and a run already in flight are refused."""
+        """Refuse an inactive domain and a run already in flight."""
         self.assert_cli_error("chain", "run", self.report, "tests")
         self.running("correctness", 1)
         self.assert_cli_error("chain", "run", self.report, "correctness")
 
     def test_a_chain_that_ended_reports_its_end(self) -> None:
-        """A chain out of items or at its cap says so and runs nothing."""
+        """Report the end of a chain out of items or at its cap, and run nothing."""
         self.capture("correctness", 1, "Nothing to report.\n")
         self.assertEqual(
             self.run_cli("chain", "run", self.report, "correctness"),
@@ -1538,7 +1538,7 @@ class SummaryCheckTest(unittest.TestCase):
         self.check("The change bounds the walk.\n\nIt renames `build` to `walk`.\n")
 
     def test_rejections(self) -> None:
-        """Every block construct a renderer would show as more than a paragraph is refused."""
+        """Refuse every block construct a renderer would show as more than a paragraph."""
         for text in (
             "",
             " \n\n \n",
@@ -1569,7 +1569,7 @@ class SummaryRunTest(WaveFixture):
         return self.run_with_agent("summary", "run", self.report, output=output)
 
     def test_it_runs_and_captures_one_summary(self) -> None:
-        """The agent runs over the change, its output takes the summary name, and no second run follows."""
+        """Run the agent over the change, name its output the summary, and follow it with no second run."""
         self.assertEqual(self.run_summary().strip(), str(self.summary))
         self.assertEqual(self.summary.read_text(), SUMMARY)
         argv = self.spawn.call_args.args[0]
@@ -1746,7 +1746,7 @@ class WorkflowTest(CliFixture):
         return report
 
     def test_a_wave_over_hand_picked_domains(self) -> None:
-        """A wave named by its domains crosses the phase split and formats like any other."""
+        """Cross the phase split on a wave named by its domains, and format it like any other."""
         report, domains = self.open_wave("correctness,docs")
         self.assertEqual(domains, ["correctness", "docs"])
         code, ended = self.chain_to_its_end(
