@@ -63,8 +63,10 @@ The decision is added once the user has picked, exactly one per item, its reason
 1. Create the wave, naming its phase or its domains:
 
    ```bash
-   <SKILL_DIR>/review init <REVIEW_DIR> <PHASE|DOMAIN,...> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat]
+   <SKILL_DIR>/review init <REVIEW_DIR> <PHASE|DOMAIN,...> --assessor <MODEL> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat]
    ```
+
+   `--assessor` takes your own model under the display name your system prompt gives it, followed by your effort level, never an identifier like `claude-opus-5:xhigh`. The effort level lives in your environment, so let the shell expand it in place: `--assessor "Opus 5 $CLAUDE_EFFORT"` under Claude Code, `--assessor "GPT 5.6 Sol $PI_REASONING_LEVEL"` under pi. A harness exposing no effort level leaves the model named alone.
 
    On the loop's first wave, pass `--revision` when the user supplied a revision, and leave it out otherwise: the script then resolves the most recent non-empty change. It prints the change it resolved, the wave report path, then the domain of each chain it created. That change is `<JJ_REVISION>` for the whole loop: pass it as `--revision` on every later wave, so every wave reviews that same change, whatever the working copy holds by then. Launch the chains and the change summary in parallel, in the background, one call each (a review run takes 10 to 20 minutes, the summary a few):
 

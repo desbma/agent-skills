@@ -28,6 +28,7 @@ _spec.loader.exec_module(review)
 CHANGE_ID = "onupomnnpqyktvkspnpkmrnwpykoqotx"
 REVISION = "@-"
 REV = CHANGE_ID[:8]
+ASSESSOR = "Opus 5 xhigh"
 TARGETS = {"C7": "#c7-run-2-item-1", "R2": "wave1.md#r2-run-1-item-2"}
 LINKED = "[C7](#c7-run-2-item-1)"
 
@@ -475,6 +476,10 @@ class CliFixture(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.run_cli(*argv, stdin=stdin)
 
+    def run_init(self, *argv: Any, assessor: str = ASSESSOR) -> str:
+        """Open a wave under an assessor and return what it printed."""
+        return self.run_cli("init", *argv, "--assessor", assessor)
+
     def run_with_agent(self, *argv: Any, output: str, status: int = 0) -> str:
         """Run a subcommand with the agent replaced by one writing the given output."""
 
@@ -515,9 +520,9 @@ class WaveFixture(CliFixture):
             "readability=2",
         )
 
-    def init(self, *argv: Any) -> Path:
-        """Open a wave and return the report path it printed under the change it resolved."""
-        return Path(self.run_cli("init", *argv).splitlines()[1])
+    def init(self, *argv: Any, assessor: str = ASSESSOR) -> Path:
+        """Open a wave and return the report path it printed."""
+        return Path(self.run_init(*argv, assessor=assessor).splitlines()[1])
 
     def chain(self, domain: str) -> Path:
         """Return the chain dir of a domain of the wave."""
@@ -548,7 +553,7 @@ class WaveFixture(CliFixture):
         self.capture("readability", 1, "Nothing to report.\n")
         self.write_summary()
 
-    def second_wave(self) -> Path:
+    def second_wave(self, assessor: str = ASSESSOR) -> Path:
         """Run wave 1 to its decisions in production order, then open a phase B wave over it."""
         self.complete_wave()
         identifiers = self.imported_assessed("correctness")
@@ -557,7 +562,7 @@ class WaveFixture(CliFixture):
             identifiers, ("applied", "applied-with-changes")
         ):
             self.decide(identifier, verdict)
-        second = self.init(self.review_dir, "B")
+        second = self.init(self.review_dir, "B", assessor=assessor)
         Path(self.review_dir, f"{REV}-wave2-tests", "run1.md").write_text(ONE_ITEM)
         self.write_summary(second)
         return second
@@ -638,7 +643,7 @@ class WaveTest(WaveFixture):
             self.report.read_text(),
             f"<!-- review: change_id={CHANGE_ID} wave=1 "
             "loop=correctness:2,readability:2,tests:1,docs:1 "
-            "correctness=2 readability=2 -->\n",
+            f"assessor='{ASSESSOR}' correctness=2 readability=2 -->\n",
         )
         for domain in ("correctness", "readability"):
             self.assertTrue(Path(self.review_dir, f"{REV}-wave1-{domain}").is_dir())
@@ -647,31 +652,48 @@ class WaveTest(WaveFixture):
         """Print the change first, so later waves can pin the loop to it."""
         review_dir = Path(self.review_dir, "named")
         review_dir.mkdir()
-        out = self.run_cli("init", review_dir, "A", "--revision", REVISION)
+        out = self.run_init(review_dir, "A", "--revision", REVISION)
         self.assertEqual(out.splitlines()[0], CHANGE_ID)
 
     def test_init_defaults_to_the_latest_non_empty_change(self) -> None:
         """Review the latest non-empty change when a wave opens without a revision."""
         review_dir = Path(self.review_dir, "default")
         review_dir.mkdir()
-        self.run_cli("init", review_dir, "A")
+        self.run_init(review_dir, "A")
         self.assertEqual(
             self.jj["resolve_change_id"].call_args.args, (review.DEFAULT_REVSET,)
+        )
+
+    def test_init_validates_the_assessor_name(self) -> None:
+        """Close up the assessor's whitespace, and refuse a name no report can carry."""
+        review_dir = Path(self.review_dir, "assessor")
+        review_dir.mkdir()
+        for assessor in (" ", "Author's Model", "Model --> preview"):
+            with self.assertRaises(SystemExit):
+                self.run_init(review_dir, "A", assessor=assessor)
+        out = self.run_init(review_dir, "A", assessor=" \tOpus  \n 5  xhigh ")
+        self.assertEqual(
+            review.read_metadata(Path(out.splitlines()[1])).assessor, ASSESSOR
         )
 
     def test_init_numbers_the_waves(self) -> None:
         """Number the wave after the reports the review dir already holds."""
         self.assertRegex(self.second_wave().name, rf"{REV}-wave2-\d{{12}}\.md")
 
+    def test_a_later_wave_names_its_own_assessor(self) -> None:
+        """Record the assessor a wave was opened under, not the preceding wave's."""
+        second = self.second_wave(assessor="Sonnet 5 medium")
+        self.assertEqual(review.read_metadata(second).assessor, "Sonnet 5 medium")
+
     def test_init_waits_for_the_previous_wave(self) -> None:
         """Wait for the preceding report's format, then for its decisions."""
         self.complete_wave()
         with self.assertRaisesRegex(SystemExit, "Wave 1 is not formatted yet"):
-            self.run_cli("init", self.review_dir, "B")
+            self.init(self.review_dir, "B")
         self.imported_assessed("correctness")
         self.run_cli("report", "format", self.report)
         with self.assertRaisesRegex(SystemExit, "Item C1 .* has no decision"):
-            self.run_cli("init", self.review_dir, "B")
+            self.init(self.review_dir, "B")
 
     def test_init_repeats_a_phase_with_lower_caps(self) -> None:
         """Run a repeated phase on the loop caps lowered by one, the loop caps standing."""
@@ -684,7 +706,9 @@ class WaveTest(WaveFixture):
         """Refuse a repeat on the first wave of a loop, with no phase to repeat yet."""
         review_dir = Path(self.review_dir, "fresh")
         review_dir.mkdir()
-        self.assert_cli_error("init", review_dir, "A", "--repeat")
+        self.assert_cli_error(
+            "init", review_dir, "A", "--repeat", "--assessor", ASSESSOR
+        )
 
     def test_a_later_cap_overrides_one_wave_alone(self) -> None:
         """Leave the loop caps alone on a cap given after the first wave."""
@@ -699,7 +723,7 @@ class WaveTest(WaveFixture):
         """Give a domain capped at zero no chain dir, and leave it unnamed."""
         review_dir = Path(self.review_dir, "excluded-chain")
         review_dir.mkdir()
-        out = self.run_cli("init", review_dir, "B", "--cap", "docs=0")
+        out = self.run_init(review_dir, "B", "--cap", "docs=0")
         self.assertEqual(out.splitlines()[2:], ["tests"])
         self.assertTrue(Path(review_dir, f"{REV}-wave1-tests").is_dir())
         self.assertFalse(Path(review_dir, f"{REV}-wave1-docs").exists())
@@ -708,15 +732,15 @@ class WaveTest(WaveFixture):
         """Run a wave named by its domains whatever phase groups each."""
         review_dir = Path(self.review_dir, "hand-picked")
         review_dir.mkdir()
-        out = self.run_cli(
-            "init", review_dir, "tests,readability", "--cap", "tests=2"
+        out = self.run_init(
+            review_dir, "tests,readability", "--cap", "tests=2"
         ).splitlines()
         self.assertEqual(out[2:], ["readability", "tests"])
         self.assertEqual(
             Path(out[1]).read_text(),
             f"<!-- review: change_id={CHANGE_ID} wave=1 "
             "loop=correctness:1,readability:1,tests:2,docs:1 "
-            "readability=1 tests=2 -->\n",
+            f"assessor='{ASSESSOR}' readability=1 tests=2 -->\n",
         )
         for domain in ("readability", "tests"):
             self.assertTrue(Path(review_dir, f"{REV}-wave1-{domain}").is_dir())
@@ -726,7 +750,7 @@ class WaveTest(WaveFixture):
         review_dir = Path(self.review_dir, "malformed")
         review_dir.mkdir()
         for domains in ("prose", "tests,tests", "A,B", "tests,", ""):
-            self.assert_cli_error("init", review_dir, domains)
+            self.assert_cli_error("init", review_dir, domains, "--assessor", ASSESSOR)
 
     def test_import_creates_sections_in_canonical_order(self) -> None:
         """Put the readability section after the correctness one whatever the order of the calls."""
@@ -892,7 +916,7 @@ class WaveTest(WaveFixture):
         self.assess(second)
         self.run_cli("report", "format", self.report)
         with self.assertRaisesRegex(SystemExit, f"Item {first} .* has no decision"):
-            self.run_cli("init", self.review_dir, "B")
+            self.init(self.review_dir, "B")
 
     def test_a_fenced_decision_leaves_the_item_open(self) -> None:
         """Keep an item assessable under an analysis quoting a decision, the real decision going below it."""
@@ -932,7 +956,7 @@ class WaveTest(WaveFixture):
         self.assess(second)
         self.run_cli("report", "format", self.report)
         with self.assertRaisesRegex(SystemExit, f"Item {first} .* has no decision"):
-            self.run_cli("init", self.review_dir, "B")
+            self.init(self.review_dir, "B")
 
     def test_a_fenced_domain_heading_does_not_open_a_section(self) -> None:
         """Keep a domain heading inside a fenced sample from taking the next domain's items."""
@@ -1201,6 +1225,17 @@ class WaveTest(WaveFixture):
             "2 items · 2 apply\n\n- apply: C1, C2\n",
         )
 
+    def test_format_names_the_models(self) -> None:
+        """Open the status list with the assessing model, then the reviewing one."""
+        self.complete_wave()
+        self.imported_assessed("correctness")
+        self.run_cli("report", "format", self.report)
+        self.assertIn(
+            f"## Review status\n\n- **Assessor model**: {ASSESSOR}\n"
+            f"- **Reviewer model**: {review.REVIEWER_MODEL_NAME}\n",
+            self.report.read_text(),
+        )
+
     def test_an_excluded_domain_is_not_awaited(self) -> None:
         """Formatting waits only on the chains of the domains the caps left active."""
         review_dir = Path(self.review_dir, "excluded")
@@ -1359,24 +1394,30 @@ class WaveTest(WaveFixture):
         self.assertIn(" Wave 1, run 1 — 1 total reviews", out.splitlines())
 
     def test_metadata_is_read_back(self) -> None:
-        """Carry the revision, the wave and its caps in the report's comment."""
+        """Carry the revision, the wave, its caps and its assessor in the report's comment."""
         metadata = review.read_metadata(self.report)
         self.assertEqual(metadata.short_change_id, REV)
         self.assertEqual(metadata.change_id, CHANGE_ID)
         self.assertEqual(metadata.wave, 1)
         self.assertEqual(metadata.active, ("correctness", "readability"))
         self.assertEqual(metadata.loop_caps["tests"], 1)
+        self.assertEqual(metadata.assessor, ASSESSOR)
 
     def test_metadata_rejections(self) -> None:
-        """Refuse a report without the comment, without loop caps, or disagreeing with its name."""
+        """Refuse a report without the comment, without loop caps or assessor, or disagreeing with its name."""
         stray = Path(self.review_dir, f"{REV}-wave3-202608261252.md")
         loop = "loop=correctness:1,readability:1,tests:1,docs:1"
+        assessor = f"assessor='{ASSESSOR}'"
         caps = "correctness=1 readability=1 -->\n"
         for text in (
             "# Not a wave report\n",
-            f"<!-- review: change_id={CHANGE_ID} wave=3 {caps}",
-            f"<!-- review: change_id={CHANGE_ID} wave=2 {loop} {caps}",
-            f"<!-- review: change_id=uqrvytospqyktvkspnpkmrnwpykoqotx wave=3 {loop} {caps}",
+            f"<!-- review: change_id={CHANGE_ID} wave=3 {assessor} {caps}",
+            f"<!-- review: change_id={CHANGE_ID} wave=3 {loop} {caps}",
+            f"<!-- review: change_id={CHANGE_ID} wave=2 {loop} {assessor} {caps}",
+            (
+                f"<!-- review: change_id=uqrvytospqyktvkspnpkmrnwpykoqotx wave=3 "
+                f"{loop} {assessor} {caps}"
+            ),
         ):
             stray.write_text(text)
             self.assertRaises(SystemExit, review.read_metadata, stray)
@@ -1403,6 +1444,7 @@ class ChainRunTest(WaveFixture):
         self.run_chain("readability")
         argv = self.spawn.call_args.args[0]
         self.assertEqual(argv[0], "pi")
+        self.assertIn(review.REVIEWER_MODEL, argv)
         self.assertIn(str(review.SKILLS_DIR / "review-readability"), argv)
         self.assertIn(CHANGE_ID, argv[-1])
         self.assertIn(str(self.chain("readability")), argv[-1])
@@ -1626,8 +1668,8 @@ class WorkflowTest(CliFixture):
 
     def open_wave(self, *argv: Any) -> tuple[Path, list[str]]:
         """Open a wave, returning its report and the domains it says it opened a chain for."""
-        printed = self.run_cli(
-            "init", self.review_dir, *argv, "--revision", CHANGE_ID
+        printed = self.run_init(
+            self.review_dir, *argv, "--revision", CHANGE_ID
         ).splitlines()
         self.assertEqual(printed[0], CHANGE_ID)
         return Path(printed[1]), printed[2:]
@@ -1771,7 +1813,7 @@ class EntryPointTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             missing = Path(tmp, "missing")
             completed = subprocess.run(
-                [SCRIPT, "init", missing, "A"],
+                [SCRIPT, "init", missing, "A", "--assessor", ASSESSOR],
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
