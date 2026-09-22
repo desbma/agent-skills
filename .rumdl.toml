@@ -1,0 +1,9 @@
+[global]
+disable = [
+  "MD001", # Heading levels should only increment by one
+  "MD013", # Line length
+  "MD025", # Keep your document organized with one main title
+  "MD036", # Emphasis used instead of a heading
+  "MD040", # Code blocks should have a language specified
+  "MD041", # First line in file should be a top level heading
+]

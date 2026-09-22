@@ -1,5 +1,7 @@
 # Agent skills
 
+[![CI checks](https://img.shields.io/github/actions/workflow/status/desbma/agent-skills/ci.yml?label=checks)](https://github.com/desbma/agent-skills/actions)
+
 Personal [coding agent skills](https://agentskills.io/).
 
 ---
