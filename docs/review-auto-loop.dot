@@ -1,0 +1,63 @@
+digraph review_workflow {
+    rankdir=LR
+    splines=polyline
+    node [shape=box, style="rounded,filled", fontname="Helvetica"]
+    edge [fontname="Helvetica", fontsize=10]
+
+    // Main agent
+    node [fillcolor="#cfe2f3"]
+    wave_a [label="Wave A"]
+    wave_b [label="Wave B"]
+    apply_a [group=a, label="main agent\napplies fixes"]
+    apply_b [group=b, label="main agent\napplies fixes"]
+
+    // Reviewers
+    node [fillcolor="#fff2cc"]
+    correctness [label="review-correctness\nrun 1"]
+    readability [label="review-readability\nrun 1"]
+    tests [label="review-tests\nrun 1"]
+    docs [label="review-docs\nrun 1"]
+    node [style="rounded,filled,dotted"]
+    correctness_n [label="review-correctness\nrun 2 … N"]
+    readability_n [label="review-readability\nrun 2 … N"]
+    tests_n [label="review-tests\nrun 2 … N"]
+    docs_n [label="review-docs\nrun 2 … N"]
+
+    // Judge
+    node [style="rounded,filled,bold", fillcolor="#d9ead3"]
+    judge_a [group=a, label="review-judge\n(opt-in)"]
+    judge_b [group=b, label="review-judge\n(opt-in)"]
+
+    // User
+    node [shape=ellipse, style=filled, fillcolor=lightgrey]
+    user_a [group=a, label="user decides"]
+    user_b [group=b, label="user decides"]
+
+    // One row per wave, time running left to right within a row
+    {rank=same; wave_a; wave_b}
+
+    // Wave A
+    wave_a -> correctness
+    wave_a -> readability
+    correctness -> correctness_n [style=dotted]
+    readability -> readability_n [style=dotted]
+    correctness_n -> judge_a
+    readability_n -> judge_a
+    judge_a -> user_a
+    user_a -> apply_a
+    apply_a -> wave_a [label="repeat", style=dashed, constraint=false]
+
+    // Hand-off to wave B, declared reversed so dot routes it as a forward edge between the rows
+    wave_b -> apply_a [penwidth=2, dir=back]
+
+    // Wave B
+    wave_b -> tests
+    wave_b -> docs
+    tests -> tests_n [style=dotted]
+    docs -> docs_n [style=dotted]
+    tests_n -> judge_b
+    docs_n -> judge_b
+    judge_b -> user_b
+    user_b -> apply_b
+    apply_b -> wave_b [label="repeat", style=dashed, constraint=false]
+}

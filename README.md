@@ -34,6 +34,16 @@ Personal [coding agent skills](https://agentskills.io/).
 - [`summarize-change`](summarize-change/SKILL.md): Describe the changes of a revision as high level prose (called by the `review-auto-loop` skill).
 - [`wait-what`](wait-what/SKILL.md): Ask for the last message to be pitched again in plain English, to counter the cryptic and overly compressed language Opus 5 tends to use. Variant of the [`wait-what` skill](https://github.com/mattpocock/skills/blob/50777fcc0982d5867997a75a1e0731b9daac94eb/skills/productivity/wait-what/SKILL.md).
 
+## Review workflow
+
+`review-auto-loop` drives the other review skills as one pipeline. A wave runs one phase, each domain as a chain of runs: phase A chains `review-correctness` and `review-readability`, phase B chains `review-tests` and `review-docs`. The split keeps the domains that change production code apart from those that follow it, so tests and docs are never reviewed against code a correctness fix from the same wave may still move. Within a chain, each run reads the captures of the runs before it and only raises new items, until a run finds none or the chain reaches its cap. `summarize-change` runs alongside the chains, and its prose opens the wave report.
+
+Once the main agent has assessed every item of a wave, `review-judge`, when opted in, recommends an action on each. It does not review again: it takes the assessment as settled and rules on the course of action, with encoded priorities — whether the fix goes far enough, whether the defect can be reached, fewer lines in production code and more coverage in tests when two courses tie — and arguments like "the linter would warn" or "a test pins this behaviour" never settle a call on their own.
+
+The user keeps the final say: the recommendation is only each item's default, and they pick item by item. The main agent applies the picks, the user squashes them, then chooses to repeat the wave's domains or move to the other phase. Every default can be overridden along the way: the domains a wave runs, the cap of each chain, and whether a wave is judged at all.
+
+![Review workflow](docs/review-auto-loop.svg)
+
 ## License
 
 [MIT](LICENSE).
