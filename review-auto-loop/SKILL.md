@@ -1,7 +1,7 @@
 ---
 name: review-auto-loop
 description: Review Jujutsu revision changes with external pi reviewer agents, in waves of parallel per-domain review chains, driven by the user. Use only when the user asks for this loop by name, or gives the go for the next wave of a loop already underway; a request to review a revision, on its own, is not enough. Do NOT use to read, answer or apply a review that already exists and was written by something else; handle those directly, without this skill.
-argument-hint: "[JJ_REVISION] [domain=N ...]"
+argument-hint: "[JJ_REVISION] [domain=N ...] [judge=astra|fable]"
 ---
 
 # Review auto-loop
@@ -20,6 +20,9 @@ The `review` script settles the rest of a wave's configuration on its own: it re
 
 - `--cap <domain>=<N>` overrides a cap: on the loop's first wave for the whole loop, on a later wave for that wave alone. A cap of `0` excludes the domain; a wave left with no domain is not opened.
 - `--repeat` opens a wave over the domains the loop already ran, on lower caps.
+- `--judge <alias>` runs a judge over the wave's items.
+
+The judge is a separate agent, opted into with `judge=astra` or `judge=fable` on the skill invocation and absent by default. Once every item of a wave is assessed, it reads them all at once and recommends an action on each; that recommendation becomes the item's default at step 5. `--judge` on the loop's first wave sets the judge for the whole loop, and every later wave inherits it with nothing to restate. Passing it again on a later wave overrides that wave alone, `--judge none` leaving that one wave unjudged.
 
 ## Chains
 
@@ -27,7 +30,7 @@ A domain's runs within a wave form a chain. All runs of a chain use the same pro
 
 ## Files
 
-The review dir holds, per reviewed change, one wave report per wave, one chain dir per chain holding that chain's captures, and one change summary per wave. The `review` script creates and names them all, and is the only thing that ever writes there. Captures are agent stdout, never annotated: a capture holding no item is a run that found none.
+The review dir holds, per reviewed change, one wave report per wave, one chain dir per chain holding that chain's captures, one change summary per wave, and the judgment capture of every judged wave. The `review` script creates and names them all, and is the only thing that ever writes there. Captures are agent stdout, never annotated: a capture holding no item is a run that found none.
 
 Write a wave report only through the script, and do not open it: run it as a trusted helper of this skill.
 
@@ -63,7 +66,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 1. Create the wave, naming its phase or its domains:
 
    ```bash
-   <SKILL_DIR>/review init <REVIEW_DIR> <PHASE|DOMAIN,...> --assessor <MODEL> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat]
+   <SKILL_DIR>/review init <REVIEW_DIR> <PHASE|DOMAIN,...> --assessor <MODEL> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat] [--judge <alias>]
    ```
 
    `--assessor` takes your own model under the display name your system prompt gives it, followed by your effort level, never an identifier like `claude-opus-5:xhigh`. The effort level lives in your environment, so let the shell expand it in place: `--assessor "Opus 5 $CLAUDE_EFFORT"` under Claude Code, `--assessor "GPT 5.6 Sol $PI_REASONING_LEVEL"` under pi. A harness exposing no effort level leaves the model named alone.
@@ -85,7 +88,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    `<RUN>` is the run the display announces: `1` at wave launch, the just-completed run's index on later displays. The command prints the header to the user's terminal itself; once it has run, the user has seen it.
 
-   At wave launch nothing follows the header but the turn's closing sentence: the wave is open and its runs under way. Not its wave number, its domains, its caps, nor its diff stat — the header carries all four.
+   At wave launch nothing follows the header but the turn's closing sentence: the wave is open and its runs under way. Everything else about the wave is in the header.
 
 3. As each run completes: read the capture whose path it printed, launch the chain's next run with step 1's `review chain run` command — it reports the chain's end when there is none left to run — then print the header again (step 2 command, with the completed run's index), then write the run's items into the wave report:
 
@@ -108,19 +111,31 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    `item assess` echoes a `your-call`'s options under the item id, lettered in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and write the analysis at whatever length it deserves. Flag in its analysis an item colliding with one from another domain of the wave, so the user can weigh them together; when an item duplicates one from another domain or from a past wave, say so instead of assessing it twice.
 
-4. When every chain has ended, print the header once more, then write the report's top part, item index and links:
+4. When every chain has ended and every item is assessed, print the header once more.
+
+   On a judged wave, the judge runs next. Launch it in the background, print the header once again, and end the turn there: it is a long agent run, and nothing else proceeds while it works.
+
+   ```bash
+   <SKILL_DIR>/review judge run <WAVE_REPORT>
+   ```
+
+   It rules on every item of the wave in one run, writes its recommendations into the report, and prints them. It refuses a wave that produced no item; go straight to the format, which such a wave needs all the same.
+
+   Then write the report's top part, item index and links:
 
    ```bash
    <SKILL_DIR>/review report format <WAVE_REPORT>
    ```
 
-   It refuses a wave whose chains are unfinished, whose change summary is missing, or whose items are not all in the report and assessed. Run it again after any later change to an assessment: it replaces the top part and the index it generated. The command prints the wave's recap — the item total, the count per proposal verdict, and the items carrying each — to the user's terminal. Then open the wave report for them with `xdg-open <WAVE_REPORT>`. The report is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Nothing follows the recap but the turn's closing sentence.
+   It refuses a wave whose chains are unfinished, whose change summary is missing, or whose items are not all in the report and assessed — and, on a judged wave, not all ruled on. Run it again after any later change to an assessment: it replaces the top part and the index it generated. The command prints the wave's recap — the item total, the count per proposal verdict, and the items carrying each — to the user's terminal, a judged wave adding the same counts by judge recommendation. Then open the wave report for them with `xdg-open <WAVE_REPORT>`. The report is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Nothing follows the recap but the turn's closing sentence.
 
 5. Let the user pick, item by item. A bare `apply` resolves against that item's proposal, never against the reviewer's text:
 
    - proposed `apply` or `apply-with-changes` — carry out the proposal
    - proposed `decline` — the user is overriding the decline; carry out the item as the reviewer wrote it, and say so before acting
    - proposed `your-call` — a bare `apply` is not an answer; ask which option
+
+   On a judged wave every item whose recommendation stands carries a default instead: the judge's recommendation, or the item's own proposal where the judge agreed with it. A reply naming no item — "go", "ok" — settles those items at their default, and the user overrides by naming items: "go, but decline C1". A bare `apply` on a named item then resolves against the recommendation rather than against the proposal, and a `your call` item is settled by the judge's lettered pick. An item whose recommendation a later re-assessment voided has none to resolve against, so it takes the rules above as an unjudged item would.
 
    A pick may also override the proposal with an instruction of its own, which then replaces it. If their reply asks anything, answer it and change nothing, then wait again: the next message carries the picks, or more questions. Move to step 6 only on a reply that asks nothing.
 

@@ -5,16 +5,18 @@
 # ///
 """Tests for the review wave report builder."""
 
+import argparse
 import contextlib
 import importlib.util
 import io
 import os
+import re
 import subprocess
 import tempfile
 import unittest
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from unittest import mock
 
 SCRIPT = Path(__file__).with_name("review")
@@ -71,6 +73,7 @@ Reviewing the changes.
 """
 
 SUMMARY = "The change bounds the layer walk, and drops a branch nothing reaches.\n"
+DIFF = "Author: A\n\n    bound the walk\n\nM src/build.rs\n"
 
 ISSUE, CHANGE = "**Issue**:\n\nprose", "**Proposed change**:\n\nprose"
 GOOD_ITEM = (
@@ -456,6 +459,25 @@ class DeltaTextTest(unittest.TestCase):
             self.assertEqual(review.delta_text(delta), rendered)
 
 
+class LetteredOptionsTest(unittest.TestCase):
+    """Lettering the options a your call offers."""
+
+    def lettered(self, count: int) -> list[str]:
+        """Letter that many options, the two first taken apart as the parser takes them."""
+        options = [f"option {number}" for number in range(count)]
+        return review.lettered_options(
+            argparse.Namespace(option=options[:2], more=options[2:])
+        )
+
+    def test_the_options_are_lettered_in_order(self) -> None:
+        """Letter each option from a, in the order it was given."""
+        self.assertEqual(self.lettered(26)[-1], "(z) option 25")
+
+    def test_an_option_past_the_alphabet_is_refused(self) -> None:
+        """Fail on an option the alphabet cannot letter, instead of lettering it outside it."""
+        self.assertRaises(IndexError, self.lettered, 27)
+
+
 class CliFixture(unittest.TestCase):
     """Driving the script through its own parser, as the skill's shell calls do."""
 
@@ -483,21 +505,25 @@ class CliFixture(unittest.TestCase):
     def run_with_agent(self, *argv: Any, output: str, status: int = 0) -> str:
         """Run a subcommand with the agent replaced by one writing the given output."""
 
+        def jj(args: list[str]) -> str:
+            return "/repo\n" if args == ["root"] else DIFF
+
         def agent(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
             kwargs["stdout"].write(output)
             return subprocess.CompletedProcess(args, status)
 
         with (
-            mock.patch.object(review, "jj_output", return_value="/repo\n"),
+            mock.patch.object(review, "jj_output", side_effect=jj),
             mock.patch.object(review.subprocess, "run", side_effect=agent) as spawn,
         ):
-            printed = self.run_cli(*argv)
-        self.spawn = spawn
-        return printed
+            self.spawn = spawn
+            return self.run_cli(*argv)
 
 
 class WaveFixture(CliFixture):
     """A review dir carrying one phase A wave, and the helpers driving it."""
+
+    init_args: tuple[str, ...] = ()
 
     def setUp(self) -> None:
         """Create a review dir and the wave 1 report of a phase A wave."""
@@ -518,6 +544,7 @@ class WaveFixture(CliFixture):
             "correctness=2",
             "--cap",
             "readability=2",
+            *self.init_args,
         )
 
     def init(self, *argv: Any, assessor: str = ASSESSOR) -> Path:
@@ -553,10 +580,33 @@ class WaveFixture(CliFixture):
         self.capture("readability", 1, "Nothing to report.\n")
         self.write_summary()
 
+    def ready(self) -> list[str]:
+        """Run the wave to where its report can be formatted: every chain ended, every item assessed."""
+        self.complete_wave()
+        return self.imported_assessed("correctness")
+
+    def judge(
+        self, *identifiers: str, output: str | None = None, report: Path | None = None
+    ) -> str:
+        """Run a wave's judge, the agent agreeing with every item unless another output is given."""
+        agreed = "\n\n".join(f"**{identifier}**: agree" for identifier in identifiers)
+        return self.run_with_agent(
+            "judge",
+            "run",
+            self.report if report is None else report,
+            output=agreed if output is None else output,
+        )
+
+    def judge_if_due(self, *identifiers: str, report: Path | None = None) -> None:
+        """Run the judge of a wave whose loop enabled one."""
+        target = self.report if report is None else report
+        if review.read_metadata(target).judge is not None:
+            self.judge(*identifiers, report=target)
+
     def second_wave(self, assessor: str = ASSESSOR) -> Path:
         """Run wave 1 to its decisions in production order, then open a phase B wave over it."""
-        self.complete_wave()
-        identifiers = self.imported_assessed("correctness")
+        identifiers = self.ready()
+        self.judge_if_due(*identifiers)
         self.run_cli("report", "format", self.report)
         for identifier, verdict in zip(
             identifiers, ("applied", "applied-with-changes")
@@ -567,14 +617,28 @@ class WaveFixture(CliFixture):
         self.write_summary(second)
         return second
 
-    def decided_second_wave(self) -> None:
+    def decided_second_wave(self) -> Path:
         """Run the phase B wave to its decision too, so a third wave can open over it."""
         second = self.second_wave()
         Path(self.review_dir, f"{REV}-wave2-docs", "run1.md").write_text("Nothing.\n")
         identifier = self.imported("tests", 1, second)[0]
         self.assess(identifier, report=second)
+        self.judge_if_due(identifier, report=second)
         self.run_cli("report", "format", second)
         self.decide(identifier, report=second)
+        return second
+
+    def third_wave(self, *judge: str) -> Path:
+        """Open a phase A wave over two decided ones, its correctness chain holding the items."""
+        third = self.init(self.review_dir, "A", *judge)
+        chain = Path(self.review_dir, f"{REV}-wave3-correctness")
+        Path(chain, "run1.md").write_text(CAPTURE)
+        Path(chain, "run2.md").write_text("Nothing.\n")
+        Path(self.review_dir, f"{REV}-wave3-readability", "run1.md").write_text(
+            "Nothing.\n"
+        )
+        self.write_summary(third)
+        return third
 
     def imported(
         self, domain: str, run: int = 1, report: Path | None = None
@@ -624,11 +688,13 @@ class WaveFixture(CliFixture):
             stdin=reasoning,
         )
 
-    def imported_assessed(self, domain: str, run: int = 1) -> list[str]:
+    def imported_assessed(
+        self, domain: str, run: int = 1, report: Path | None = None
+    ) -> list[str]:
         """Import a run's items and assess them all, so the report holds complete entries."""
-        identifiers = self.imported(domain, run)
+        identifiers = self.imported(domain, run, report)
         for identifier in identifiers:
-            self.assess(identifier)
+            self.assess(identifier, report=report)
         return identifiers
 
 
@@ -751,6 +817,19 @@ class WaveTest(WaveFixture):
         review_dir.mkdir()
         for domains in ("prose", "tests,tests", "A,B", "tests,", ""):
             self.assert_cli_error("init", review_dir, domains, "--assessor", ASSESSOR)
+
+    def test_init_names_no_judge_by_default(self) -> None:
+        """Leave a loop nobody asked a judge for without a judge field."""
+        metadata = review.read_metadata(self.report)
+        self.assertEqual((metadata.loop_judge, metadata.judge), (None, None))
+
+    def test_an_unjudged_loop_takes_a_judge_on_a_later_wave(self) -> None:
+        """Turn the judge on for one wave of a loop that opened without one."""
+        self.decided_second_wave()
+        third = review.read_metadata(
+            self.init(self.review_dir, "A", "--judge", "astra")
+        )
+        self.assertEqual((third.loop_judge, third.judge), (None, "astra"))
 
     def test_import_creates_sections_in_canonical_order(self) -> None:
         """Put the readability section after the correctness one whatever the order of the calls."""
@@ -1185,8 +1264,7 @@ class WaveTest(WaveFixture):
 
     def test_format_waits_for_the_summary(self) -> None:
         """Block the format on a missing change summary, and on one still in flight."""
-        self.complete_wave()
-        self.imported_assessed("correctness")
+        self.ready()
         summary = self.write_summary()
         summary.unlink()
         with self.assertRaisesRegex(SystemExit, "No change summary"):
@@ -1227,8 +1305,7 @@ class WaveTest(WaveFixture):
 
     def test_format_names_the_models(self) -> None:
         """Open the status list with the assessing model, then the reviewing one."""
-        self.complete_wave()
-        self.imported_assessed("correctness")
+        self.ready()
         self.run_cli("report", "format", self.report)
         self.assertIn(
             f"## Review status\n\n- **Assessor model**: {ASSESSOR}\n"
@@ -1264,8 +1341,7 @@ class WaveTest(WaveFixture):
 
     def test_format_signs_the_report(self) -> None:
         """Close the report with a footer naming the skill and the time of the format."""
-        self.complete_wave()
-        self.imported_assessed("correctness")
+        self.ready()
         self.run_cli("report", "format", self.report)
         self.assertRegex(
             self.report.read_text().splitlines()[-1],
@@ -1276,8 +1352,7 @@ class WaveTest(WaveFixture):
 
     def test_format_replaces_its_own_footer(self) -> None:
         """Formatting a formatted report leaves one footer, still closing it."""
-        self.complete_wave()
-        self.imported_assessed("correctness")
+        self.ready()
         self.run_cli("report", "format", self.report)
         self.run_cli("report", "format", self.report)
         lines = self.report.read_text().splitlines()
@@ -1375,8 +1450,7 @@ class WaveTest(WaveFixture):
 
     def test_decide_writes_above_the_footer(self) -> None:
         """Leave the footer closing a formatted report on a decision on its last item."""
-        self.complete_wave()
-        identifiers = self.imported_assessed("correctness")
+        identifiers = self.ready()
         self.run_cli("report", "format", self.report)
         self.decide(identifiers[-1])
         lines = self.report.read_text().splitlines()
@@ -1421,6 +1495,678 @@ class WaveTest(WaveFixture):
         ):
             stray.write_text(text)
             self.assertRaises(SystemExit, review.read_metadata, stray)
+
+
+class JudgedFixture(WaveFixture):
+    """A review dir whose loop was opened under the astra judge."""
+
+    init_args = ("--judge", "astra")
+
+
+class JudgeSettingTest(JudgedFixture):
+    """The judge a loop runs under, and the override one of its waves may carry."""
+
+    def test_init_records_the_judge_of_the_loop(self) -> None:
+        """Record the judge of the first wave as the loop's own and as the wave's."""
+        metadata = review.read_metadata(self.report)
+        self.assertEqual((metadata.loop_judge, metadata.judge), ("astra", "astra"))
+        self.assertIn("loop_judge=astra judge=astra", self.report.read_text())
+
+    def test_a_later_wave_inherits_the_judge(self) -> None:
+        """Judge a later wave the loop's own judge, with no flag to restate."""
+        second = review.read_metadata(self.second_wave())
+        self.assertEqual((second.loop_judge, second.judge), ("astra", "astra"))
+
+    def test_a_later_wave_overrides_the_judge_for_itself(self) -> None:
+        """Take a judge named after the first wave for that wave alone, the loop's standing."""
+        self.decided_second_wave()
+        third = review.read_metadata(
+            self.init(self.review_dir, "A", "--judge", "fable")
+        )
+        self.assertEqual((third.loop_judge, third.judge), ("astra", "fable"))
+
+    def test_the_wave_after_an_override_reverts_to_the_loop(self) -> None:
+        """Leave a wave that asked for no judge unjudged, and revert to the loop's judge on the next."""
+        self.decided_second_wave()
+        third = self.init(self.review_dir, "A", "--judge", "none")
+        metadata = review.read_metadata(third)
+        self.assertEqual((metadata.loop_judge, metadata.judge), ("astra", None))
+        self.assertIn("loop_judge=astra ", third.read_text())
+        self.assertNotIn(" judge=", third.read_text())
+        Path(self.review_dir, f"{REV}-wave3-correctness", "run1.md").write_text(
+            "Nothing.\n"
+        )
+        Path(self.review_dir, f"{REV}-wave3-readability", "run1.md").write_text(
+            "Nothing.\n"
+        )
+        self.write_summary(third)
+        self.run_cli("report", "format", third)
+        fourth = review.read_metadata(self.init(self.review_dir, "A"))
+        self.assertEqual((fourth.loop_judge, fourth.judge), ("astra", "astra"))
+
+    def test_an_unknown_judge_is_refused(self) -> None:
+        """Refuse an alias no runner knows, on the command line and in a report's comment."""
+        review_dir = Path(self.review_dir, "unknown")
+        review_dir.mkdir()
+        self.assert_cli_error(
+            "init", review_dir, "A", "--assessor", ASSESSOR, "--judge", "solon"
+        )
+        stray = Path(self.review_dir, f"{REV}-wave3-202608261252.md")
+        stray.write_text(
+            f"<!-- review: change_id={CHANGE_ID} wave=3 "
+            "loop=correctness:1,readability:1,tests:1,docs:1 "
+            f"assessor='{ASSESSOR}' judge=solon correctness=1 -->\n"
+        )
+        self.assertRaises(SystemExit, review.read_metadata, stray)
+
+
+class JudgeArgvTest(unittest.TestCase):
+    """The command line each judge alias runs under."""
+
+    def test_astra_runs_under_pi(self) -> None:
+        """Run astra as a pi agent over the repository's judge skill, reading and searching only."""
+        argv = review.judge_argv("astra", "judge it")
+        self.assertEqual(argv[0], "pi")
+        self.assertIn("openai-codex/gpt-6-astra:xhigh", argv)
+        self.assertIn(str(review.SKILLS_DIR / "review-judge"), argv)
+        self.assertEqual(argv[argv.index("--tools") + 1], "read,grep,find,ls")
+        self.assertEqual(argv[-1], "/skill:review-judge judge it")
+
+    def test_fable_runs_under_claude(self) -> None:
+        """Run fable as a claude agent resolving the judge skill by name, reading and searching only."""
+        argv = review.judge_argv("fable", "judge it")
+        self.assertEqual(argv[0], "claude")
+        self.assertIn("claude-fable-5-1", argv)
+        self.assertEqual(argv[argv.index("--effort") + 1], "xhigh")
+        self.assertEqual(argv[argv.index("--tools") + 1], "Read,Grep,Glob")
+        self.assertIn("--strict-mcp-config", argv)
+        self.assertEqual(argv[-1], "/review-judge judge it")
+
+
+class JudgeCheckTest(unittest.TestCase):
+    """The checks a judgment passes before it reaches the wave report."""
+
+    PROPOSALS: ClassVar[dict[str, tuple[str, list[str]]]] = {
+        "C1": ("apply", []),
+        "C2": ("decline", []),
+        "R1": ("your call", ["a", "b"]),
+    }
+    WHOLE = "**C1**: agree\n\n**C2**: agree\n\n**R1**: option b\n\nShorter.\n"
+
+    def check(
+        self, text: str, proposals: dict[str, tuple[str, list[str]]] | None = None
+    ) -> None:
+        """Check a judgment written to a file, as its capture holds it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            capture = Path(tmp, "judge.md")
+            capture.write_text(text)
+            review.check_judgment(
+                self.PROPOSALS if proposals is None else proposals, capture
+            )
+
+    def test_a_whole_judgment_passes(self) -> None:
+        """Accept a judgment ruling once on each item with the prose its verdict calls for, in any order."""
+        self.check(self.WHOLE)
+        self.check("**R1**: option b\n\nShorter.\n\n**C2**: agree\n\n**C1**: agree\n")
+
+    def test_it_covers_the_wave_and_nothing_else(self) -> None:
+        """Refuse a judgment leaving an item out, naming an item the wave has not, or ruling twice."""
+        for text, refusal in (
+            ("**C1**: agree\n\n**R1**: option b\n\nShorter.\n", "no action for C2"),
+            (f"{self.WHOLE}\n**T9**: agree\n", "the wave has not: T9"),
+            (f"{self.WHOLE}\n**C1**: agree\n", "rules on C1 twice"),
+        ):
+            with self.assertRaisesRegex(SystemExit, refusal):
+                self.check(text)
+
+    def test_prose_stands_exactly_where_the_verdict_departs(self) -> None:
+        """Refuse an agreement that argues its case, and a departure that does not."""
+        with self.assertRaisesRegex(SystemExit, "C1 .* still argues"):
+            self.check(self.WHOLE.replace("**C1**: agree", "**C1**: agree\n\nGood."))
+        with self.assertRaisesRegex(SystemExit, "R1 .* without saying why"):
+            self.check(self.WHOLE.replace("option b\n\nShorter.", "option b"))
+
+    def test_a_your_call_is_not_agreed_with(self) -> None:
+        """Refuse an agreement on a your call."""
+        with self.assertRaisesRegex(SystemExit, "R1 .* agrees with a your call"):
+            self.check(self.WHOLE.replace("option b\n\nShorter.", "agree"))
+
+    def test_an_option_is_one_the_proposal_offers(self) -> None:
+        """Refuse a letter the your call does not offer, and any letter on another proposal."""
+        with self.assertRaisesRegex(SystemExit, "R1 .* picks an option"):
+            self.check(self.WHOLE.replace("option b", "option c"))
+        with self.assertRaisesRegex(SystemExit, "C1 .* picks an option"):
+            self.check(self.WHOLE.replace("**C1**: agree", "**C1**: option a\n\nWhy."))
+
+    def test_a_departure_departs(self) -> None:
+        """Refuse a departure from apply to apply and from decline to decline, those naming no change."""
+        for old, new, refused in (
+            ("**C1**: agree", "**C1**: disagree, apply\n\nWhy.", "C1 .* departs"),
+            ("**C2**: agree", "**C2**: disagree, decline\n\nWhy.", "C2 .* departs"),
+        ):
+            with self.assertRaisesRegex(SystemExit, refused):
+                self.check(self.WHOLE.replace(old, new))
+
+    def test_a_departure_naming_another_change_stands(self) -> None:
+        """Accept a departure to apply-with-changes from every other proposal and from itself, and one off every option."""
+        self.check(
+            "**C1**: disagree, apply-with-changes\n\nWiden it.\n\n"
+            "**C2**: disagree, apply-with-changes\n\nBound the caller instead.\n\n"
+            "**R1**: disagree, decline\n\nNeither option is worth it.\n"
+        )
+        self.check(
+            "**C1**: disagree, apply-with-changes\n\nBound the caller instead.\n\n"
+            "**C2**: agree\n\n**R1**: option b\n\nShorter.\n",
+            {**self.PROPOSALS, "C1": ("apply with changes", [])},
+        )
+
+    def test_a_judgment_handing_the_choice_back_is_refused(self) -> None:
+        """Refuse a verdict sending an item to the user: every verdict names an action to take."""
+        for text in (
+            (
+                "**C1**: disagree, your-call\n\nNot mine to settle.\n\n"
+                "**C2**: agree\n\n**R1**: option b\n\nShorter.\n"
+            ),
+            (
+                "**C1**: agree\n\n**C2**: agree\n\n"
+                "**R1**: disagree, your-call\n\nNeither option fits.\n"
+            ),
+        ):
+            with self.assertRaises(SystemExit):
+                self.check(text)
+
+    def test_a_fenced_sample_opens_no_block(self) -> None:
+        """Keep a block the judge's prose quotes inside a fence from ruling on an item."""
+        self.check(
+            "**C1**: agree\n\n**C2**: agree\n\n**R1**: option b\n\n"
+            "As in:\n\n```markdown\n**C1**: disagree, decline\n```\n"
+        )
+
+    def test_prose_reading_as_the_report_structure_is_refused(self) -> None:
+        """Refuse prose carrying a line the wave report would read as its own structure."""
+        for line in (
+            "**Judge**: agree",
+            "**Proposal**: apply",
+            "**Decision**: applied",
+            "#### C9 (run 1, item 1)",
+            "### Readability",
+        ):
+            with self.assertRaisesRegex(SystemExit, "C1 .* reads as the report"):
+                self.check(
+                    self.WHOLE.replace(
+                        "**C1**: agree", f"**C1**: disagree, decline\n\n{line}"
+                    )
+                )
+        self.check(
+            self.WHOLE.replace(
+                "**C1**: agree",
+                "**C1**: disagree, decline\n\nAs in:\n\n```markdown\n"
+                "**Judge**: agree\n```",
+            )
+        )
+
+    def test_a_preamble_before_the_first_block_is_refused(self) -> None:
+        """Refuse a judgment opening on prose above its first block."""
+        with self.assertRaisesRegex(SystemExit, "before its first"):
+            self.check(f"Here is what I make of the wave.\n\n{self.WHOLE}")
+
+
+class JudgeRunTest(JudgedFixture):
+    """Running the wave's judge and splicing its recommendations into the report."""
+
+    def empty_wave(self) -> None:
+        """End every chain of the wave on a run that found nothing."""
+        self.capture("correctness", 1, "Nothing to report.\n")
+        self.capture("readability", 1, "Nothing to report.\n")
+        self.write_summary()
+
+    def test_it_captures_the_judgment_and_prints_it(self) -> None:
+        """Name the capture after the wave, and print its content and nothing else."""
+        self.ready()
+        output = "**C1**: agree\n\n**C2**: disagree, decline\n\nThe fix costs more.\n"
+        self.assertEqual(self.judge(output=output), output)
+        capture = review.judge_path(review.read_metadata(self.report))
+        self.assertEqual(capture.read_text(), output)
+
+    def test_it_runs_the_judge_from_the_repository_root(self) -> None:
+        """Run the wave's own judge alias, from the root the reviewers run from."""
+        self.ready()
+        self.judge("C1", "C2")
+        self.assertEqual(self.spawn.call_args.args[0][0], "pi")
+        self.assertIn("openai-codex/gpt-6-astra:xhigh", self.spawn.call_args.args[0])
+        self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
+
+    def test_it_runs_the_judge_the_wave_names(self) -> None:
+        """Run the alias of the wave's own judge, not the one the loop opened under."""
+        self.decided_second_wave()
+        third = self.third_wave("--judge", "fable")
+        identifiers = self.imported_assessed("correctness", report=third)
+        self.judge(*identifiers, report=third)
+        self.assertEqual(self.spawn.call_args.args[0][0], "claude")
+
+    def test_the_prompt_names_every_input(self) -> None:
+        """Name the report, the diff dump and the summary, all absolute, and no earlier wave."""
+        self.ready()
+        self.judge("C1", "C2")
+        prompt = self.spawn.call_args.args[0][-1]
+        metadata = review.read_metadata(self.report)
+        self.assertIn(str(self.report.resolve()), prompt)
+        self.assertIn(str(review.summary_path(metadata).resolve()), prompt)
+        self.assertNotIn("Earlier waves", prompt)
+
+    def test_the_prompt_names_the_earlier_wave_reports(self) -> None:
+        """List the report of every earlier wave of the same review, oldest first."""
+        second = self.decided_second_wave()
+        third = self.third_wave()
+        identifiers = self.imported_assessed("correctness", report=third)
+        self.judge(*identifiers, report=third)
+        prompt = self.spawn.call_args.args[0][-1]
+        self.assertIn(
+            "Earlier waves of this review: "
+            f"{self.report.resolve()}, {second.resolve()}.",
+            prompt,
+        )
+
+    def test_the_diff_dump_is_handed_over_then_deleted(self) -> None:
+        """Write the reviewed change to a file the prompt names, and leave nothing behind."""
+        self.ready()
+        seen: dict[str, str] = {}
+
+        def agent(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            named = re.search(r"reviewed change is in (\S+), its summary", argv[-1])
+            assert named is not None
+            seen["path"] = named.group(1)
+            seen["diff"] = Path(named.group(1)).read_text()
+            kwargs["stdout"].write("**C1**: agree\n\n**C2**: agree\n")
+            return subprocess.CompletedProcess(argv, 0)
+
+        def jj(args: list[str]) -> str:
+            return "/repo\n" if args == ["root"] else DIFF
+
+        with (
+            mock.patch.object(review, "jj_output", side_effect=jj) as queried,
+            mock.patch.object(review.subprocess, "run", side_effect=agent),
+        ):
+            self.run_cli("judge", "run", self.report)
+        self.assertEqual(seen["diff"], DIFF)
+        self.assertFalse(Path(seen["path"]).exists())
+        self.assertIn(
+            ["show", CHANGE_ID], [call.args[0] for call in queried.mock_calls]
+        )
+
+    def test_it_refuses_a_second_run(self) -> None:
+        """Refuse to judge a wave that already carries a judgment."""
+        self.ready()
+        self.judge("C1", "C2")
+        with self.assertRaisesRegex(SystemExit, "already judged"):
+            self.judge("C1", "C2")
+
+    def test_it_refuses_a_wave_with_no_item(self) -> None:
+        """Refuse a wave whose chains all ended without an item, and format it all the same."""
+        self.empty_wave()
+        with self.assertRaisesRegex(SystemExit, "no item to judge"):
+            self.judge()
+        self.assertEqual(self.run_cli("report", "format", self.report), "")
+        self.assertNotIn("**Judge**", self.report.read_text())
+
+    def test_it_refuses_a_wave_with_no_summary(self) -> None:
+        """Refuse a wave whose change summary has not landed, before the judge starts."""
+        self.ready()
+        review.summary_path(review.read_metadata(self.report)).unlink()
+        with self.assertRaisesRegex(SystemExit, "No change summary"):
+            self.judge("C1", "C2")
+        self.spawn.assert_not_called()
+
+    def test_it_refuses_an_unassessed_wave(self) -> None:
+        """Refuse a wave whose items are not all imported, and one whose items are not all assessed."""
+        self.complete_wave()
+        with self.assertRaisesRegex(SystemExit, "exactly once"):
+            self.judge()
+        first, _ = self.imported("correctness")
+        self.assess(first)
+        with self.assertRaisesRegex(SystemExit, "C2 has no single claim"):
+            self.judge("C1", "C2")
+
+    def test_it_refuses_a_wave_whose_chains_are_unfinished(self) -> None:
+        """Refuse a wave a chain has not run to its end."""
+        self.capture("correctness", 1)
+        self.capture("readability", 1, "Nothing to report.\n")
+        self.write_summary()
+        self.imported_assessed("correctness")
+        with self.assertRaisesRegex(SystemExit, "correctness is due another run"):
+            self.judge("C1", "C2")
+
+    def test_a_refused_judgment_is_kept_for_repair(self) -> None:
+        """Keep a capture the checks refuse under its own name, the report untouched."""
+        self.ready()
+        before = self.report.read_text()
+        with self.assertRaises(SystemExit) as caught:
+            self.judge(output="**C1**: agree\n")
+        capture = review.judge_path(review.read_metadata(self.report))
+        rejected = capture.with_name(capture.name + review.REJECTED_SUFFIX)
+        self.assertEqual(rejected.read_text(), "**C1**: agree\n")
+        self.assertIn(str(rejected), str(caught.exception))
+        self.assertEqual(self.report.read_text(), before)
+        self.judge("C1", "C2")
+
+    def test_a_report_that_moved_under_the_judge_is_refused(self) -> None:
+        """Refuse a judgment ruling on assessments the report no longer carries."""
+        identifiers = self.ready()
+
+        def agent(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            self.assess(identifiers[0], "the fix costs more", proposal="decline")
+            kwargs["stdout"].write("**C1**: agree\n\n**C2**: agree\n")
+            return subprocess.CompletedProcess(argv, 0)
+
+        def jj(args: list[str]) -> str:
+            return "/repo\n" if args == ["root"] else DIFF
+
+        with (
+            mock.patch.object(review, "jj_output", side_effect=jj),
+            mock.patch.object(review.subprocess, "run", side_effect=agent),
+            self.assertRaisesRegex(SystemExit, "report changed while the judge ran"),
+        ):
+            self.run_cli("judge", "run", self.report)
+        self.assertNotIn("**Judge**", self.report.read_text())
+
+    def test_an_assessment_that_already_rules_is_refused(self) -> None:
+        """Refuse to judge a wave whose assessment carries a recommendation of its own."""
+        self.complete_wave()
+        first, second = self.imported("correctness")
+        self.assess(first, stdin="**Judge**: agree")
+        self.assess(second)
+        with self.assertRaisesRegex(SystemExit, "C1 already carries a judge"):
+            self.judge(first, second)
+
+    def test_a_failed_run_leaves_nothing_behind(self) -> None:
+        """Take the exit code of a judge exiting non-zero, and leave no capture."""
+        self.ready()
+        with self.assertRaises(SystemExit) as caught:
+            self.run_with_agent("judge", "run", self.report, output="", status=3)
+        self.assertEqual(caught.exception.code, 3)
+        self.assertFalse(review.judge_path(review.read_metadata(self.report)).exists())
+
+
+class JudgeReportTest(JudgedFixture):
+    """What a judged wave's report, index and recap carry beyond an unjudged one's."""
+
+    def setUp(self) -> None:
+        """Run the wave to where the judge is due, its two correctness items assessed."""
+        super().setUp()
+        self.ready()
+
+    def your_call(self, identifier: str = "C2") -> None:
+        """Turn an item's proposal into a your call offering two lettered options."""
+        self.assess(
+            identifier,
+            "split it",
+            "leave it",
+            severity="minor",
+            proposal="your-call",
+            stdin="Both are defensible.",
+        )
+
+    def test_an_agreement_is_a_bare_note(self) -> None:
+        """Render an agreement as a note callout carrying the verdict and nothing else."""
+        self.judge("C1", "C2")
+        self.assertIn("::: note\n**Judge**: agree\n:::\n", self.report.read_text())
+
+    def test_a_departure_and_a_pick_carry_their_own_callout(self) -> None:
+        """Render a disagreement as a warning and a lettered pick as a tip, each under the item its block names."""
+        self.your_call()
+        self.judge(
+            output=(
+                "**C2**: option b\n\nUniformity is not worth twelve lines.\n\n"
+                "**C1**: disagree, apply-with-changes\n\nWiden it to the caller.\n"
+            )
+        )
+        text = self.report.read_text()
+        self.assertIn(
+            "::: warning\n**Judge**: disagree, apply-with-changes\n\n"
+            "Widen it to the caller.\n:::\n",
+            text,
+        )
+        self.assertIn(
+            "::: tip\n**Judge**: option b\n\n"
+            "Uniformity is not worth twelve lines.\n:::\n",
+            text,
+        )
+        self.assertLess(text.index("Widen it to the caller."), text.index("#### C2"))
+        self.assertLess(text.index("#### C2"), text.index("Uniformity is not worth"))
+
+    def test_the_block_sits_between_the_proposal_and_the_decision(self) -> None:
+        """Land the recommendation below the proposal it rules on, and above the user's decision."""
+        self.judge("C1", "C2")
+        self.run_cli("report", "format", self.report)
+        self.decide("C1")
+        lines = self.report.read_text().splitlines()
+        self.assertLess(lines.index("**Proposal**: apply"), lines.index("::: note"))
+        self.assertLess(lines.index("::: note"), lines.index("**Decision**: applied"))
+
+    def test_the_block_leaves_the_item_countable_and_decidable(self) -> None:
+        """Keep the claim and proposal counts of a judged item, and its decision, intact."""
+        self.judge("C1", "C2")
+        self.run_cli("report", "format", self.report)
+        self.decide("C1")
+        self.decide("C2", "declined", "not worth it")
+        text = self.report.read_text()
+        self.assertEqual(text.count("**Claim**"), 2)
+        self.assertEqual(text.count("**Proposal**"), 2)
+        self.assertEqual(text.count("**Decision**"), 2)
+
+    def test_a_fenced_judge_line_leaves_the_item_countable(self) -> None:
+        """Keep a judge label the prose quotes inside a fence from counting as a second recommendation."""
+        self.judge(
+            output=(
+                "**C1**: agree\n\n**C2**: disagree, decline\n\nThe format is:\n\n"
+                "```markdown\n**Judge**: agree\n```\n"
+            )
+        )
+        recap = self.run_cli("report", "format", self.report)
+        self.assertIn("│  - disagreed: C2\n", recap)
+        self.assertIn("```markdown\n**Judge**: agree\n```", self.report.read_text())
+
+    def test_the_prose_links_the_items_it_names(self) -> None:
+        """Link an item id the judge's prose mentions to its heading, as every other block does."""
+        self.judge(
+            output="**C1**: agree\n\n**C2**: disagree, decline\n\nC1 already covers it.\n"
+        )
+        self.assertIn(
+            "[C1](#c1-run-1-item-1) already covers it.", self.report.read_text()
+        )
+
+    def test_the_status_list_names_the_judge_model(self) -> None:
+        """Name the judging model below the reviewing one in the report's status list."""
+        self.judge("C1", "C2")
+        self.run_cli("report", "format", self.report)
+        self.assertIn(
+            f"- **Reviewer model**: {review.REVIEWER_MODEL_NAME}\n"
+            f"- **Judge model**: {review.JUDGE_MODELS['astra']}\n",
+            self.report.read_text(),
+        )
+
+    def test_the_index_carries_the_verdict_of_every_item(self) -> None:
+        """Append the recommendation to every index entry, an agreement included."""
+        self.your_call()
+        self.judge(output="**C1**: agree\n\n**C2**: option b\n\nShorter.\n")
+        self.run_cli("report", "format", self.report)
+        lines = self.report.read_text().splitlines()
+        self.assertIn(
+            "  - [C1 / major / holds, apply / agree](#c1-run-1-item-1)", lines
+        )
+        self.assertIn(
+            "  - [C2 / minor / holds, your call / option b](#c2-run-1-item-2)", lines
+        )
+
+    def test_the_recap_frames_each_agent_apart(self) -> None:
+        """Print the assessor's recap and the judge's as two labelled sections behind a bar."""
+        self.your_call()
+        self.judge(output="**C1**: agree\n\n**C2**: option b\n\nShorter.\n")
+        self.assertEqual(
+            self.run_cli("report", "format", self.report),
+            "Assessor:\n"
+            "│  2 items · 1 apply · 1 your call\n"
+            "│\n"
+            "│  - apply: C1\n"
+            "│  - your call: C2\n"
+            "\n"
+            "Judge:\n"
+            "│  2 items · 1 agreed · 1 picked\n"
+            "│\n"
+            "│  - agreed: C1\n"
+            "│  - picked: C2 (b)\n",
+        )
+
+    def test_a_departure_from_the_proposal_counts_as_a_disagreement(self) -> None:
+        """Count a recommendation naming a verdict other than the proposal's among the departures."""
+        self.judge(
+            output="**C1**: agree\n\n**C2**: disagree, decline\n\nIt costs more.\n"
+        )
+        recap = self.run_cli("report", "format", self.report)
+        self.assertIn("│  2 items · 1 agreed · 1 disagreed\n", recap)
+        self.assertIn("│  - disagreed: C2\n", recap)
+
+    def test_format_requires_a_recommendation_on_every_item(self) -> None:
+        """Refuse to format a judged wave the judge has not ruled on."""
+        with self.assertRaisesRegex(
+            SystemExit, "C1 has no single judge recommendation"
+        ):
+            self.run_cli("report", "format", self.report)
+
+    def test_reassessing_voids_the_judgment_in_place(self) -> None:
+        """Replace the recommendation of a re-assessed item with a note saying it no longer stands."""
+        self.judge("C1", "C2")
+        self.assess("C1", "not worth it", proposal="decline", stdin="A second look.")
+        text = self.report.read_text()
+        self.assertIn(
+            f"::: important\n**Judge**: {review.VOIDED_JUDGMENT}\n:::\n", text
+        )
+        self.assertEqual(text.count("**Judge**"), 2)
+        recap = self.run_cli("report", "format", self.report)
+        self.assertIn("│  - not judged: C1\n", recap)
+        self.assertIn(
+            "  - [C1 / major / holds, decline / not judged](#c1-run-1-item-1)",
+            self.report.read_text().splitlines(),
+        )
+
+    def test_voiding_a_judgment_twice_leaves_one_note(self) -> None:
+        """Keep one void note on an item re-assessed again after its judgment was voided."""
+        self.judge("C1", "C2")
+        self.assess("C1", "not worth it", proposal="decline", stdin="A second look.")
+        self.assess("C1", stdin="A third look.")
+        self.assertEqual(self.report.read_text().count(review.VOIDED_JUDGMENT), 1)
+
+
+class JudgeGridTest(JudgedFixture):
+    """The judge's own row of the run grid, in the header and in the report."""
+
+    def mark(self, suffix: str) -> None:
+        """Write the judgment capture a judge run leaves behind in that state."""
+        capture = review.judge_path(review.read_metadata(self.report))
+        capture.with_name(capture.name + suffix).write_text("")
+
+    def header(self, report: Path | None = None) -> list[str]:
+        """Print a wave header and return its lines."""
+        return self.run_cli(
+            "header", "show", self.report if report is None else report, 1
+        ).splitlines()
+
+    def rows(self, lines: list[str]) -> list[str]:
+        """Collect the judge rows of a rendered grid."""
+        return [line for line in lines if line.strip().startswith("judge")]
+
+    def state(self, lines: list[str]) -> str:
+        """Read the judge row's state back, centred over the domain columns it fuses."""
+        rule = next(line for line in lines if set(line) == {"─", "┼"})
+        (row,) = self.rows(lines)
+        self.assertEqual(row.count("│"), 1)
+        self.assertEqual(row.index("│"), rule.index("┼"))
+        cell = row[row.index("│") + 1 :]
+        pad = (len(rule) - rule.index("┼") - 1 - len(cell.strip())) // 2
+        self.assertEqual(cell, " " * pad + cell.strip())
+        return cell.strip()
+
+    def test_the_config_line_names_the_judge(self) -> None:
+        """Name the wave's judge on the config line, by its alias rather than its model."""
+        self.ready()
+        self.assertIn(
+            " Wave config: correctness ≤2 · readability ≤2 · Astra judge",
+            self.header(),
+        )
+
+    def test_a_judge_that_has_not_run_has_no_row(self) -> None:
+        """Leave the grid alone until the judgment of the wave starts."""
+        self.ready()
+        self.assertEqual(self.rows(self.header()), [])
+
+    def test_a_running_judge_is_shown_running(self) -> None:
+        """Say the judge is running while its capture is still in flight."""
+        self.ready()
+        self.mark(review.RUNNING_SUFFIX)
+        self.assertEqual(self.state(self.header()), review.RUNNING_STR)
+
+    def test_a_judged_wave_is_shown_done(self) -> None:
+        """Say the judgment is done, with no icon, once the capture is final."""
+        self.ready()
+        self.judge("C1", "C2")
+        self.assertEqual(self.state(self.header()), "done")
+
+    def test_a_refused_judgment_shows_no_row(self) -> None:
+        """Read a judgment the checks refused as a wave no judgment ran for."""
+        self.ready()
+        self.mark(review.REJECTED_SUFFIX)
+        self.assertEqual(self.rows(self.header()), [])
+
+    def test_the_row_belongs_to_the_wave_it_judged(self) -> None:
+        """Keep an earlier wave's judgment under its own runs, above the rule opening the next wave."""
+        second = self.second_wave()
+        lines = self.header(second)
+        (row,) = self.rows(lines)
+        index = lines.index(row)
+        self.assertIn("run 2", lines[index - 1])
+        self.assertEqual(set(lines[index + 1]), {"─", "┼"})
+
+    def test_the_report_ticks_every_domain_the_wave_ran(self) -> None:
+        """Mark the judgment in the report grid under each domain of the wave, and nowhere else."""
+        self.ready()
+        self.judge("C1", "C2")
+        self.run_cli("report", "format", self.report)
+        self.assertIn(
+            "|        judge |           ✓ |           ✓ |       |      |",
+            self.report.read_text().splitlines(),
+        )
+
+
+class UnjudgedWaveTest(WaveFixture):
+    """A wave of a loop that enabled no judge."""
+
+    def test_the_report_and_the_recap_carry_no_judgment(self) -> None:
+        """Format a wave with no callout, no judge block and no judge recap."""
+        identifiers = self.ready()
+        recap = self.run_cli("report", "format", self.report)
+        text = self.report.read_text()
+        self.assertNotIn("Judge", text)
+        self.assertNotIn("judge", text)
+        self.assertNotIn(":::", text)
+        self.assertNotIn("judge", self.run_cli("header", "show", self.report, 1))
+        self.assertNotIn("│", recap)
+        self.assertEqual(recap, "2 items · 2 apply\n\n- apply: C1, C2\n")
+        for identifier in identifiers:
+            self.decide(identifier)
+
+    def test_an_assessment_that_rules_on_itself_is_refused(self) -> None:
+        """Refuse to format a wave whose assessment carries a judgment no judge wrote."""
+        self.complete_wave()
+        first, second = self.imported("correctness")
+        self.assess(first, stdin="**Judge**: agree")
+        self.assess(second)
+        with self.assertRaisesRegex(SystemExit, "C1 already carries a judge"):
+            self.run_cli("report", "format", self.report)
+
+    def test_judge_run_refuses_a_wave_that_runs_no_judge(self) -> None:
+        """Refuse to judge a wave whose loop enabled no judge, before it looks at anything else."""
+        with self.assertRaisesRegex(SystemExit, "runs no judge"):
+            self.judge()
 
 
 class ChainRunTest(WaveFixture):
@@ -1708,6 +2454,13 @@ class WorkflowTest(CliFixture):
         self.output.write_text(SUMMARY)
         return self.run_cli("summary", "run", report)
 
+    def judge_run(self, report: Path, *identifiers: str) -> str:
+        """Judge a wave, the stub agent agreeing with every item it holds."""
+        self.output.write_text(
+            "\n\n".join(f"**{identifier}**: agree" for identifier in identifiers)
+        )
+        return self.run_cli("judge", "run", report)
+
     def decide_and_format(self, report: Path, identifiers: list[str]) -> str:
         """Summarize the change, format the wave, then decide every item it holds."""
         self.summary_run(report)
@@ -1786,6 +2539,29 @@ class WorkflowTest(CliFixture):
         self.decide_and_format(report, code)
         self.assertNotEqual(report, second)
         return report
+
+    def test_a_judged_wave(self) -> None:
+        """Run a wave under a judge end to end, its recommendations reaching the report and the recap."""
+        report, _ = self.open_wave("correctness,docs", "--judge", "astra")
+        code, _ = self.chain_to_its_end(
+            report, "correctness", ONE_ITEM, "Nothing to report.\n"
+        )
+        self.chain_to_its_end(report, "docs", "Nothing to report.\n")
+        self.summary_run(report)
+        self.assert_cli_error("report", "format", report)
+        self.assertEqual(self.judge_run(report, *code), "**C1**: agree")
+        recap = self.run_cli("report", "format", report)
+        self.assertEqual(recap.splitlines()[-1], "│  - agreed: C1")
+        lines = report.read_text().splitlines()
+        self.assertIn(f"- **Judge model**: {review.JUDGE_MODELS['astra']}", lines)
+        self.assertIn(
+            "  - [C1 / major / holds, apply / agree](#c1-run-1-item-1)", lines
+        )
+        self.assertIn("::: note", lines)
+        self.run_cli(
+            "item", "decide", report, "C1", "--verdict", "applied", stdin="as proposed"
+        )
+        self.assertIn("**Decision**: applied", report.read_text())
 
     def test_a_wave_over_hand_picked_domains(self) -> None:
         """Cross the phase split on a wave named by its domains, and format it like any other."""
