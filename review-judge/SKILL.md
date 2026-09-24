@@ -23,6 +23,8 @@ The prompt names every input as a path. Read them all before judging anything.
 
 **The judgment is wholly open.** Whether the proposal is the right course, above all whether the fix goes far enough, and the severity as it bears on either.
 
+A course that reverts an item applied in an earlier wave, or carries out one declined there, names that item and says why its decision no longer holds.
+
 **Read the code freely in service of the judgment**: what else calls this, whether the same shape recurs elsewhere, what a wider fix would cost. Reading for a better fix is not reviewing.
 
 **Contradict a stated fact only when the call cannot be settled without it**, and say that is what you are doing. This should be rare.
@@ -34,6 +36,10 @@ The prompt names every input as a path. Read them all before judging anything.
 An improvement that fixes no defect the review found is not going further. It is a new item, and you do not raise items.
 
 Keeping the change within the reviewed diff never justifies dropping a real improvement. It may mean splitting the work across several commits, and a recommendation may say so.
+
+**Is there a better fix?** A fix can be correct, complete and concise and still not be the best one. Look for a course that fixes the same defect by construction: one that removes the state, branch or duplication the defect lives in instead of adding a check that guards it, or one whose single change resolves several items of the wave at once. Prefer it when it is at least as correct and has a concrete advantage: fewer lines of production code, fewer items left to apply, or an invalid state that can no longer be expressed.
+
+When one course resolves several items, recommend it on the item it most directly fixes, and on each other item say which item's fix covers it.
 
 **Can it be reached?** A defect may hold against the code and still have no path to it from real use: the only caller never passes that value, or the window opens only when the procedure driving the code is broken. Asking this is not re-deriving the defect — whether the code is wrong is settled — it is weighing what the fix has to carry.
 
@@ -52,7 +58,7 @@ None of these is ever sufficient on its own to drop an otherwise valid improveme
 
 Your prose is typically shorter than the assessor's analysis, often much shorter.
 
-A disagreement is justified — what the assessor's proposal misses, and what to do instead. Nothing beyond that.
+A disagreement is justified — what the assessor's proposal misses, and what to do instead. Nothing beyond that, except a code sketch for a better fix that prose cannot pin down.
 
 A pick among offered options is justified too, but it may be a single sentence: where the reason is already in the assessment, name what settles the choice rather than restating the case.
 
