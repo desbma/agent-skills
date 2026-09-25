@@ -111,9 +111,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    `item assess` echoes a `your-call`'s options under the item id, lettered in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and write the analysis at whatever length it deserves. Flag in its analysis an item colliding with one from another domain of the wave, so the user can weigh them together; when an item duplicates one from another domain or from a past wave, say so instead of assessing it twice.
 
-4. When every chain has ended and every item is assessed, print the header once more.
-
-   On a judged wave, the judge runs next. Launch it in the background, print the header once again, and end the turn there: it is a long agent run, and nothing else proceeds while it works.
+4. When every chain has ended and every item is assessed, print the header once more; on a judged wave, launch the judge in the background first, then print the header and end the turn there: it is a long agent run, and nothing else proceeds while it works.
 
    ```bash
    <SKILL_DIR>/review judge run <WAVE_REPORT>
