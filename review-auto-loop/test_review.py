@@ -145,12 +145,13 @@ class RawReviewTest(unittest.TestCase):
                 review.check_reviewer_item(broken, capture, 1)
 
     def test_format_checks_accept_every_delta_form(self) -> None:
-        """Accept a zero count, a singular unit, and a range carrying a qualifier."""
+        """Accept a zero count, a singular unit, a range carrying a qualifier, and a qualifier ahead of the count."""
         capture = Path("run1.md")
         for delta in (
             "0 lines",
             "-1 line",
             "+8 to 15 lines including a regression test",
+            "about -8 lines",
         ):
             review.check_reviewer_item(GOOD_ITEM.replace("+1 lines", delta), capture, 1)
 

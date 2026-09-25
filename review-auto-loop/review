@@ -112,7 +112,7 @@ ITEM_TITLE_RE = re.compile(r"\*\*[^*]+\*\*")
 ITEM_SEVERITY_RE = re.compile(r"\*\*Severity\*\*: (critical|major|minor)\s*$")
 ITEM_ISSUE_RE = re.compile(r"\*\*Issue\*\*:\s*$")
 ITEM_PROPOSED_CHANGE_RE = re.compile(r"\*\*Proposed change\*\*:\s*$")
-ITEM_DELTA_RE = re.compile(r"\*\*Estimated delta\*\*: [-+]?\d.*\blines?\b")
+ITEM_DELTA_RE = re.compile(r"\*\*Estimated delta\*\*: \D*\d.*\blines?\b")
 ITEM_LABELS = (
     ("severity", ITEM_SEVERITY_RE, "**Severity**: <critical, major or minor>", False),
     ("issue", ITEM_ISSUE_RE, "**Issue**:", True),
