@@ -1092,32 +1092,38 @@ def reviewer_prompt(domain: Domain, revision: str, chain: Path) -> str:
     )
 
 
+def chain_end_reason(counts: list[int | None], cap: int) -> str | None:
+    """Tell why a chain of completed runs has ended, or None while it is due another run."""
+    if len(counts) >= cap:
+        return f"it has reached its cap of {cap}"
+    if counts and not counts[-1]:
+        return f"run {len(counts)} found no item"
+    return None
+
+
 def cmd_chain_run(args: argparse.Namespace) -> None:
-    """Run the chain's next review and capture its output."""
+    """Run the chain's next review, capture its output, and report the chain's end when that run is its last."""
     metadata = read_metadata(args.report)
     chain = chain_dir(metadata, args.domain).resolve()
     counts = wave_state(metadata).item_counts.get((metadata.wave, args.domain), [])
     cap = metadata.domain_caps[args.domain]
     if None in counts:
         raise SystemExit(f"Chain {args.domain} still has a run in flight")
-    if len(counts) >= cap:
-        print(f"Chain {args.domain} ends: it has reached its cap of {cap}")
-        return
-    if counts and not counts[-1]:
-        print(f"Chain {args.domain} ends: run {len(counts)} found no item")
-        return
-    run = len(counts) + 1
-    print(
-        run_agent(
-            pi_argv(
-                REVIEWER_MODEL,
-                f"review-{args.domain}",
-                reviewer_prompt(args.domain, metadata.change_id, chain),
-            ),
-            chain / f"run{run}.md",
-            check_capture,
-        )
+    if ended := chain_end_reason(counts, cap):
+        raise SystemExit(f"Chain {args.domain} has ended: {ended}")
+    capture = run_agent(
+        pi_argv(
+            REVIEWER_MODEL,
+            f"review-{args.domain}",
+            reviewer_prompt(args.domain, metadata.change_id, chain),
+        ),
+        chain / f"run{len(counts) + 1}.md",
+        check_capture,
     )
+    print(capture)
+    found = len(reviewer_item_spans(capture.read_text()))
+    if ended := chain_end_reason([*counts, found], cap):
+        print(f"Chain {args.domain} ends: {ended}")
 
 
 def cmd_summary_run(args: argparse.Namespace) -> None:
@@ -1633,7 +1639,7 @@ def check_chains_complete(metadata: ReportMetadata, state: WaveState) -> None:
             raise SystemExit(f"Chain {domain} still has a run in flight")
         if len(counts) > cap:
             raise SystemExit(f"Chain {domain} ran past its cap of {cap}")
-        if counts[-1] and len(counts) < cap:
+        if chain_end_reason(counts, cap) is None:
             raise SystemExit(f"Chain {domain} is due another run")
 
 

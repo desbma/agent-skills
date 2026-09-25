@@ -2296,19 +2296,29 @@ class ChainRunTest(WaveFixture):
         self.running("correctness", 1)
         self.assert_cli_error("chain", "run", self.report, "correctness")
 
-    def test_a_chain_that_ended_reports_its_end(self) -> None:
-        """Report the end of a chain out of items or at its cap, and run nothing."""
-        self.capture("correctness", 1, "Nothing to report.\n")
+    def test_a_run_that_ends_its_chain_reports_the_end(self) -> None:
+        """Report the chain's end below the capture of a run finding no item or reaching the cap."""
         self.assertEqual(
-            self.run_cli("chain", "run", self.report, "correctness"),
+            self.run_chain("correctness", output="Nothing to report.\n"),
+            f"{self.chain('correctness') / 'run1.md'}\n"
             "Chain correctness ends: run 1 found no item\n",
         )
         self.capture("readability", 1)
-        self.capture("readability", 2)
         self.assertEqual(
-            self.run_cli("chain", "run", self.report, "readability"),
+            self.run_chain("readability"),
+            f"{self.chain('readability') / 'run2.md'}\n"
             "Chain readability ends: it has reached its cap of 2\n",
         )
+
+    def test_a_chain_that_ended_is_refused(self) -> None:
+        """Refuse a chain out of items or at its cap, and run nothing."""
+        self.capture("correctness", 1, "Nothing to report.\n")
+        self.assert_cli_error("chain", "run", self.report, "correctness")
+        self.capture("readability", 1)
+        self.capture("readability", 2)
+        self.assert_cli_error("chain", "run", self.report, "readability")
+        self.assertFalse(Path(self.chain("correctness"), "run2.md").exists())
+        self.assertFalse(Path(self.chain("readability"), "run3.md").exists())
 
 
 class SummaryCheckTest(unittest.TestCase):
@@ -2426,12 +2436,12 @@ class WorkflowTest(CliFixture):
         return self.run_cli("chain", "run", report, domain)
 
     def chain_to_its_end(
-        self, report: Path, domain: str, *outputs: str
+        self, report: Path, domain: str, first: str, *rest: str
     ) -> tuple[list[str], str]:
-        """Run a chain over successive reviewer outputs, importing and assessing each run."""
+        """Run a chain over successive reviewer outputs, importing and assessing each run, and return the end its last run reported."""
         identifiers = []
-        for run, output in enumerate(outputs, start=1):
-            self.review_run(report, domain, output)
+        for run, output in enumerate((first, *rest), start=1):
+            result = self.review_run(report, domain, output)
             self.run_cli("header", "show", report, run)
             identifiers.extend(
                 self.run_cli("item", "import", report, domain, run).split()
@@ -2447,7 +2457,8 @@ class WorkflowTest(CliFixture):
                 "apply",
                 stdin="The code confirms it.",
             )
-        return identifiers, self.review_run(report, domain, "")
+        self.assert_cli_error("chain", "run", report, domain)
+        return identifiers, result.partition("\n")[2]
 
     def summary_run(self, report: Path) -> str:
         """Summarize the change of a wave, the stub agent writing the prose."""

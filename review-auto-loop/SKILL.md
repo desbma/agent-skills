@@ -26,7 +26,7 @@ The judge is a separate agent, opted into with `judge=astra` or `judge=fable` on
 
 ## Chains
 
-A domain's runs within a wave form a chain. All runs of a chain use the same prompt, which designates the chain's dir as additional previous reviews: a run reads the completed captures of the runs before it, and does not raise their items again. `review chain run` starts the run the chain is due, and says so instead when the chain has ended — on a run that found no item, or at its cap. Launch a chain's next run as soon as the previous one completes; do not wait for its assessment.
+A domain's runs within a wave form a chain. All runs of a chain use the same prompt, which designates the chain's dir as additional previous reviews: a run reads the completed captures of the runs before it, and does not raise their items again. `review chain run` runs the chain's next review, and once that run completes, reports the chain's end when it was the last: a run that found no item, or one reaching the cap. Launch a chain's next run as soon as the previous one completes, unless that one reported the chain's end; do not wait for its assessment.
 
 ## Files
 
@@ -90,7 +90,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    At wave launch nothing follows the header but the turn's closing sentence: the wave is open and its runs under way. Everything else about the wave is in the header.
 
-3. As each run completes: read the capture whose path it printed, launch the chain's next run with step 1's `review chain run` command — it reports the chain's end when there is none left to run — then print the header again (step 2 command, with the completed run's index), then write the run's items into the wave report:
+3. As each run completes: read the capture whose path it printed, then, unless the run also reported the chain's end, launch the chain's next run in the background with step 1's `review chain run` command. Then print the header again (step 2 command, with the completed run's index), then write the run's items into the wave report:
 
    ```bash
    <SKILL_DIR>/review item import <WAVE_REPORT> <DOMAIN> <RUN>
