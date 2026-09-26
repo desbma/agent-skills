@@ -111,7 +111,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    `item assess` echoes a `your-call`'s options under the item id, lettered in the order given: that letter is what a pick names. Assess each item by reading the code it talks about and checking its claims and its severity rather than trusting them, and write the analysis at whatever length it deserves. Flag in its analysis an item colliding with one from another domain of the wave, so the user can weigh them together; when an item duplicates one from another domain or from a past wave, say so instead of assessing it twice.
 
-4. When every chain has ended and every item is assessed, print the header once more; on a judged wave, launch the judge in the background first, then print the header and end the turn there: it is a long agent run, and nothing else proceeds while it works.
+4. When every chain has ended and every item is assessed, print the header once more; on a judged wave, launch the judge in the background first, in a call of its own, then print the header and end the turn there: it is a long agent run, and nothing else proceeds while it works.
 
    ```bash
    <SKILL_DIR>/review judge run <WAVE_REPORT>
@@ -157,7 +157,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
 - `review header show` and `review report format` are run verbatim: no pipe, no redirection, no `head`/`tail`/`grep`, no output limit, alone in their call. Their output is for the user, not for you to digest, so its length is never a reason to trim it.
 - What `review header show` and `review report format` print reaches the user's terminal as it is printed. Never quote it back, restate its figures, or summarize it.
-- Issue independent operations together rather than one per turn: several tool calls in one message, several `review` invocations in one shell call.
+- Issue independent operations together rather than one per turn: several tool calls in one message, several `review` invocations in one shell call. The `run` commands are the exception: each is a call of its own, put in the background by the harness, never by a shell `&`.
 - Never apply an item the user did not pick.
 - Apply each picked item completely: carry the change through every aspect it naturally touches, even ones another domain owns — a correctness fix ships with its test, and with the cleanup or documentation update the same change calls for. Never leave part of a change undone because a later wave would cover that aspect.
 - Get an explicit approval and explicit choices from the user. If an answer is ambiguous, or leaves one of your questions unanswered, ask again rather than assume a default.

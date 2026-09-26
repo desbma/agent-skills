@@ -13,6 +13,7 @@ import enum
 import functools
 import re
 import shlex
+import signal
 import string
 import subprocess
 import sys
@@ -1053,7 +1054,7 @@ def run_agent(
     capture: Path,
     check: collections.abc.Callable[[Path], None],
 ) -> Path:
-    """Run one agent, capture its output, and give the capture its final name."""
+    """Run one agent, capture its output, and give the capture its final name, or write it to stderr when the run fails."""
     running = capture.with_name(capture.name + RUNNING_SUFFIX)
     try:
         stdout = running.open("x")
@@ -1061,17 +1062,24 @@ def run_agent(
         raise SystemExit(f"A run is still writing {capture.name}") from None
     status = 1
     try:
-        with stdout:
-            status = subprocess.run(
+        with (
+            stdout,
+            subprocess.Popen(
                 argv,
                 stdin=subprocess.DEVNULL,
                 stdout=stdout,
                 cwd=jj_output(["root"]).strip(),
-                check=False,
-            ).returncode
+            ) as agent,
+        ):
+            try:
+                status = agent.wait()
+            finally:
+                # stop an agent still running on the way out, letting it end what it started
+                agent.terminate()
     finally:
         if status:
-            running.unlink(missing_ok=True)
+            sys.stderr.write(running.read_text())
+            running.unlink()
     if status:
         print(f"Agent run failed: {argv[0]} exited {status}", file=sys.stderr)
         raise SystemExit(status)
@@ -1910,6 +1918,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """Parse the command line and run the requested subcommand."""
+    # unwind on termination as on any other exit, stopping a run's agent and dropping its capture
+    signal.signal(signal.SIGTERM, lambda signum, _frame: sys.exit(128 + signum))
     args = build_parser().parse_args()
     args.func(args)
 

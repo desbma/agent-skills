@@ -6,13 +6,16 @@
 """Tests for the review wave report builder."""
 
 import argparse
+import collections.abc
 import contextlib
 import importlib.util
 import io
 import os
 import re
+import signal
 import subprocess
 import tempfile
+import time
 import unittest
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
@@ -479,15 +482,30 @@ class LetteredOptionsTest(unittest.TestCase):
         self.assertRaises(IndexError, self.lettered, 27)
 
 
+def patch_agent(
+    agent: collections.abc.Callable[..., subprocess.CompletedProcess[str]],
+) -> contextlib.AbstractContextManager[Any]:
+    """Replace the agent spawn with a callable taking the spawn's arguments and returning its completion."""
+
+    def spawn(argv: list[str], **kwargs: Any) -> mock.MagicMock:
+        process = mock.MagicMock()
+        process.__enter__.return_value = process
+        process.wait.return_value = agent(argv, **kwargs).returncode
+        return process
+
+    return mock.patch.object(review.subprocess, "Popen", side_effect=spawn)
+
+
 class CliFixture(unittest.TestCase):
     """Driving the script through its own parser, as the skill's shell calls do."""
 
     def run_cli(self, *argv: Any, stdin: str | None = None) -> str:
         """Run one subcommand and return what it printed."""
         out = io.StringIO()
+        self.stderr = io.StringIO()
         with (
             contextlib.redirect_stdout(out),
-            contextlib.redirect_stderr(io.StringIO()),
+            contextlib.redirect_stderr(self.stderr),
             mock.patch("sys.stdin", io.StringIO(stdin or "")),
         ):
             args = review.build_parser().parse_args([str(arg) for arg in argv])
@@ -515,7 +533,7 @@ class CliFixture(unittest.TestCase):
 
         with (
             mock.patch.object(review, "jj_output", side_effect=jj),
-            mock.patch.object(review.subprocess, "run", side_effect=agent) as spawn,
+            patch_agent(agent) as spawn,
         ):
             self.spawn = spawn
             return self.run_cli(*argv)
@@ -1786,7 +1804,7 @@ class JudgeRunTest(JudgedFixture):
 
         with (
             mock.patch.object(review, "jj_output", side_effect=jj) as queried,
-            mock.patch.object(review.subprocess, "run", side_effect=agent),
+            patch_agent(agent),
         ):
             self.run_cli("judge", "run", self.report)
         self.assertEqual(seen["diff"], DIFF)
@@ -1864,7 +1882,7 @@ class JudgeRunTest(JudgedFixture):
 
         with (
             mock.patch.object(review, "jj_output", side_effect=jj),
-            mock.patch.object(review.subprocess, "run", side_effect=agent),
+            patch_agent(agent),
             self.assertRaisesRegex(SystemExit, "report changed while the judge ran"),
         ):
             self.run_cli("judge", "run", self.report)
@@ -2209,7 +2227,7 @@ class ChainRunTest(WaveFixture):
         with (
             contextlib.chdir(self.review_dir),
             mock.patch.object(review, "jj_output", return_value="/repo\n"),
-            mock.patch.object(review.subprocess, "run", side_effect=reviewer) as spawn,
+            patch_agent(reviewer) as spawn,
         ):
             self.run_cli("chain", "run", self.report.name, "correctness")
         self.assertIn(str(self.chain("correctness")), spawn.call_args.args[0][-1])
@@ -2221,7 +2239,7 @@ class ChainRunTest(WaveFixture):
         with (
             mock.patch.object(review, "scan_review_dir", return_value=({}, {})),
             mock.patch.object(review, "jj_output", return_value="/repo\n"),
-            mock.patch.object(review.subprocess, "run") as spawn,
+            mock.patch.object(review.subprocess, "Popen") as spawn,
             self.assertRaises(SystemExit),
         ):
             self.run_cli("chain", "run", self.report, "correctness")
@@ -2269,17 +2287,23 @@ class ChainRunTest(WaveFixture):
         self.assertTrue(Path(chain, f"run1.md{review.REJECTED_SUFFIX}").is_file())
 
     def test_a_failed_run_leaves_nothing_behind(self) -> None:
-        """Take the exit code of a reviewer exiting non-zero, and leave no capture."""
+        """Forward a failed reviewer's output and exit code, and leave no capture."""
         with self.assertRaises(SystemExit) as caught:
-            self.run_chain("correctness", status=3)
+            self.run_chain("correctness", output="Usage limit reached\n", status=3)
         self.assertEqual(caught.exception.code, 3)
         self.assertEqual(list(self.chain("correctness").iterdir()), [])
+        self.assertEqual(
+            self.stderr.getvalue(),
+            "Usage limit reached\nAgent run failed: pi exited 3\n",
+        )
 
     def test_a_reviewer_that_never_starts_leaves_nothing_behind(self) -> None:
         """Leave no capture standing in for a run the system cannot spawn."""
         with (
             mock.patch.object(review, "jj_output", return_value="/repo\n"),
-            mock.patch.object(review.subprocess, "run", side_effect=FileNotFoundError),
+            mock.patch.object(
+                review.subprocess, "Popen", side_effect=FileNotFoundError
+            ),
             self.assertRaises(FileNotFoundError),
         ):
             self.run_cli("chain", "run", self.report, "correctness")
@@ -2393,6 +2417,39 @@ class SummaryRunTest(WaveFixture):
         self.run_cli("header", "show", self.report, 1)
         self.run_summary()
         self.assertEqual(self.summary.read_text(), SUMMARY)
+
+    def test_a_terminated_run_stops_its_agent_and_leaves_nothing_behind(self) -> None:
+        """Pass termination on to the agent and drop the in-flight capture when the script is terminated mid-run."""
+        bin_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        agent_pid = bin_dir / "agent.pid"
+        terminated = bin_dir / "agent.terminated"
+        for name, body in {
+            "jj": f'echo "{bin_dir}"',
+            "pi": f"""trap 'kill $!; touch "{terminated}"; exit 143' TERM
+echo $$ > "{agent_pid}.tmp" && mv "{agent_pid}.tmp" "{agent_pid}"
+sleep 10 & wait""",
+        }.items():
+            stub = bin_dir / name
+            stub.write_text(f"#!/bin/sh\n{body}\n")
+            stub.chmod(0o755)
+        script = subprocess.Popen(
+            [SCRIPT, "summary", "run", self.report],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        )
+        while not agent_pid.exists():
+            self.assertIsNone(script.poll())
+            time.sleep(0.01)
+        script.send_signal(signal.SIGTERM)
+        self.assertEqual(script.wait(timeout=10), 128 + signal.SIGTERM)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(agent_pid.read_text()), 0)
+        self.assertTrue(terminated.exists())
+        self.assertFalse(
+            self.summary.with_name(self.summary.name + review.RUNNING_SUFFIX).exists()
+        )
 
 
 class WorkflowTest(CliFixture):
