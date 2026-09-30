@@ -1586,7 +1586,7 @@ class JudgeArgvTest(unittest.TestCase):
         """Run astra as a pi agent over the repository's judge skill, reading and searching only."""
         argv = review.judge_argv("astra", "judge it")
         self.assertEqual(argv[0], "pi")
-        self.assertIn("openai-codex/gpt-6-astra:xhigh", argv)
+        self.assertIn("openai-codex/gpt-6-astra:max", argv)
         self.assertIn(str(review.SKILLS_DIR / "review-judge"), argv)
         self.assertEqual(argv[argv.index("--tools") + 1], "read,grep,find,ls")
         self.assertEqual(argv[-1], "/skill:review-judge judge it")
@@ -1752,7 +1752,7 @@ class JudgeRunTest(JudgedFixture):
         self.ready()
         self.judge("C1", "C2")
         self.assertEqual(self.spawn.call_args.args[0][0], "pi")
-        self.assertIn("openai-codex/gpt-6-astra:xhigh", self.spawn.call_args.args[0])
+        self.assertIn("openai-codex/gpt-6-astra:max", self.spawn.call_args.args[0])
         self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
 
     def test_it_runs_the_judge_the_wave_names(self) -> None:

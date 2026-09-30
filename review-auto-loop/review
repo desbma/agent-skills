@@ -55,10 +55,10 @@ CAP_SCALES = collections.defaultdict(
 )
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent
-REVIEWER_MODEL = "openai-codex/gpt-5.6-sol:xhigh"
-REVIEWER_MODEL_NAME = "GPT 5.6 Sol xhigh"
+REVIEWER_MODEL = "openai-codex/gpt-6-astra:medium"
+REVIEWER_MODEL_NAME = "GPT 6 Astra medium"
 SUMMARY_MODEL = "openai-codex/gpt-5.6-terra:medium"
-JUDGE_MODELS = {"astra": "GPT 6 Astra xhigh", "fable": "Fable 5.1 xhigh"}
+JUDGE_MODELS = {"astra": "GPT 6 Astra max", "fable": "Fable 5.1 xhigh"}
 NO_JUDGE = "none"
 SUMMARY_PARSER = markdown_it.MarkdownIt("commonmark").enable("table")
 PARAGRAPH_TOKENS = frozenset({"paragraph_open", "inline", "paragraph_close"})
@@ -1164,7 +1164,7 @@ def judge_argv(alias: str, prompt: str) -> list[str]:
     """Build the command line of the judge an alias names, reading and searching only."""
     if alias == "astra":
         return pi_argv(
-            "openai-codex/gpt-6-astra:xhigh",
+            "openai-codex/gpt-6-astra:max",
             "review-judge",
             f"/skill:review-judge {prompt}",
             "--tools",
