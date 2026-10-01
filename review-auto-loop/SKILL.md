@@ -125,7 +125,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    <SKILL_DIR>/review report format <WAVE_REPORT>
    ```
 
-   It refuses a wave whose chains are unfinished, whose change summary is missing, or whose items are not all in the report and assessed — and, on a judged wave, not all ruled on. Run it again after any later change to an assessment: it replaces the top part and the index it generated. The command prints the wave's recap — the item total, the count per proposal verdict, and the items carrying each — to the user's terminal, a judged wave adding the same counts by judge recommendation. Then open the wave report for them with `xdg-open <WAVE_REPORT>`. The report is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Nothing follows the recap but the turn's closing sentence.
+   It refuses a wave whose chains are unfinished, whose change summary is missing, or whose items are not all in the report and assessed — and, on a judged wave, not all ruled on. Run it again after any later change to an assessment: it replaces the top part and the index it generated. The command prints the wave's recap — the item total, the count per proposal verdict, and the items carrying each — to the user's terminal, a judged wave adding the same counts by judge recommendation. Then, unless the wave produced no item, open the wave report for them with `xdg-open <WAVE_REPORT>`. The report is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Nothing follows the recap but the turn's closing sentence.
 
 5. Let the user pick, item by item. A bare `apply` resolves against that item's proposal, never against the reviewer's text:
 
