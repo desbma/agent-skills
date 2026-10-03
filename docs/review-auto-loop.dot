@@ -1,8 +1,12 @@
 digraph review_workflow {
     rankdir=LR
     splines=polyline
+    // Ranks doubled through minlen, leaving a free rank between run columns for the note
+    ranksep=0.25
+    // Halved, so the column ordering edges space boxes as usual and hug brackets to their row
+    nodesep=0.125
     node [shape=box, style="rounded,filled", fontname="Helvetica"]
-    edge [fontname="Helvetica", fontsize=10]
+    edge [fontname="Helvetica", fontsize=10, minlen=2]
 
     // Main agent
     node [fillcolor="#cfe2f3"]
@@ -33,8 +37,51 @@ digraph review_workflow {
     user_a [group=a, label="user decides"]
     user_b [group=b, label="user decides"]
 
+    // Brackets spanning the reviewer boxes of each row, one half per run column, widths matching the row's widest box
+    node [shape=plain, style=""]
+    bracket_a1 [label=<<table border="0" cellborder="1" cellspacing="0"><tr><td sides="LB" width="146" height="8"></td></tr></table>>]
+    bracket_a2 [label=<<table border="0" cellborder="1" cellspacing="0"><tr><td sides="BR" width="146" height="8"></td></tr></table>>]
+    bracket_b1 [label=<<table border="0" cellborder="1" cellspacing="0"><tr><td sides="LT" width="100" height="8"></td></tr></table>>]
+    bracket_b2 [label=<<table border="0" cellborder="1" cellspacing="0"><tr><td sides="TR" width="100" height="8"></td></tr></table>>]
+
+    // Waypoints pinning the lines crossing between the rows, and the note between them
+    node [shape=point, style=invis, width=0]
+    repeat_a1; repeat_a2; repeat_a3; note_1; note; note_2
+    // Dots as wide as the hand-off line, joining its segments
+    node [style="", width=0.028, penwidth=0, fillcolor=black]
+    handoff_1; handoff_2
+
     // One row per wave, time running left to right within a row
     {rank=same; wave_a; wave_b}
+
+    // Top to bottom order of each run column, brackets hugging their row
+    {
+        rank=same
+        edge [style=invis, minlen=1]
+        correctness -> readability
+        bracket_a1 -> repeat_a1 -> note_1 -> handoff_1 -> bracket_b1
+        tests -> docs
+        edge [minlen=0]
+        readability -> bracket_a1
+        bracket_b1 -> tests
+    }
+    {
+        rank=same
+        edge [style=invis, minlen=1]
+        correctness_n -> readability_n
+        bracket_a2 -> repeat_a2 -> note_2 -> handoff_2 -> bracket_b2
+        tests_n -> docs_n
+        edge [minlen=0]
+        readability_n -> bracket_a2
+        bracket_b2 -> tests_n
+    }
+
+    bracket_a1:se -> bracket_a2:sw [dir=none]
+    bracket_b1:ne -> bracket_b2:nw [dir=none]
+
+    // Note centered in the free rank between run columns
+    note_1 -> note [color=transparent, dir=none, minlen=1, headlabel="number of runs auto scales with reviewed diff size", labeldistance=0]
+    note -> note_2 [style=invis, minlen=1]
 
     // Wave A
     wave_a -> correctness
@@ -45,10 +92,16 @@ digraph review_workflow {
     readability_n -> judge_a
     judge_a -> user_a
     user_a -> apply_a
-    apply_a -> wave_a [label="repeat", style=dashed, constraint=false]
+    // Repeat split at waypoints, its label landing between the run and judge columns like wave B's
+    wave_a -> repeat_a1 [style=dashed, dir=back]
+    repeat_a1 -> repeat_a2 [style=dashed, dir=none]
+    repeat_a2 -> repeat_a3 [label="repeat", style=dashed, dir=none]
+    repeat_a3 -> apply_a [style=dashed, dir=none]
 
     // Hand-off to wave B, declared reversed so dot routes it as a forward edge between the rows
-    wave_b -> apply_a [penwidth=2, dir=back]
+    wave_b -> handoff_1 [penwidth=2, dir=back]
+    handoff_1 -> handoff_2 [penwidth=2, dir=none]
+    handoff_2 -> apply_a [penwidth=2, dir=none]
 
     // Wave B
     wave_b -> tests
