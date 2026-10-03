@@ -12,7 +12,7 @@ Review the Jujutsu changes for the target revision with external reviewer agents
 
 Each domain maps to an item id prefix: `correctness` → `C`, `readability` → `R`, `tests` → `T`, `docs` → `D`.
 
-By default, a wave runs two domains in parallel: phase A waves run correctness and readability, phase B waves run tests and docs. The split keeps the domains that change production code apart from those that follow it. The loop starts at phase A, and moves between phases as the user decides at the end of each wave.
+By default, a wave runs two domains in parallel: phase A waves run correctness and readability, phase B waves run tests and docs. The split keeps the domains that change production code apart from those that follow it. The loop's first wave runs phase A, or all four domains at once on a revision small enough that every chain is capped at one run: there, the split would cost a whole wave round to protect very little code. The loop then moves between phases as the user decides at the end of each wave.
 
 A wave can also run domains the phases keep apart. `review init` takes a comma separated domain list in place of the phase letter, and the wave then runs exactly the domains it names. `<domain>=<N>` arguments still set caps; when the domains they name do not fit one phase — `readability=1 tests=1` — they name the wave's domains too. A wave whose domains would fit one phase is asked for in words: "only readability this wave". Compose a wave by hand only on the user's request: one crossing the split reviews tests and docs against code its own correctness items may still change.
 
@@ -66,12 +66,12 @@ The decision is added once the user has picked, exactly one per item, its reason
 1. Create the wave, naming its phase or its domains:
 
    ```bash
-   <SKILL_DIR>/review init <REVIEW_DIR> <PHASE|DOMAIN,...> --assessor <MODEL> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat] [--judge <alias>]
+   <SKILL_DIR>/review init <REVIEW_DIR> [<PHASE|DOMAIN,...>] --assessor <MODEL> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat] [--judge <alias>]
    ```
 
    `--assessor` takes your own model under the display name your system prompt gives it, followed by your effort level, never an identifier like `claude-opus-5:xhigh`. The effort level lives in your environment, so let the shell expand it in place: `--assessor "Opus 5 $CLAUDE_EFFORT"` under Claude Code, `--assessor "GPT 5.6 Sol $PI_REASONING_LEVEL"` under pi. A harness exposing no effort level leaves the model named alone.
 
-   On the loop's first wave, pass `--revision` when the user supplied a revision, and leave it out otherwise: the script then resolves the most recent non-empty change. It prints the change it resolved, the wave report path, then the domain of each chain it created. That change is `<JJ_REVISION>` for the whole loop: pass it as `--revision` on every later wave, so every wave reviews that same change, whatever the working copy holds by then. Launch the chains and the change summary in parallel, in the background, one call each (a review run takes 10 to 20 minutes, the summary a few):
+   On the loop's first wave, name no phase or domains unless the user asked for some: the script picks them. Pass `--revision` when the user supplied a revision, and leave it out otherwise: the script then resolves the most recent non-empty change. It prints the change it resolved, the wave report path, then the domain of each chain it created. That change is `<JJ_REVISION>` for the whole loop: pass it as `--revision` on every later wave, so every wave reviews that same change, whatever the working copy holds by then. Launch the chains and the change summary in parallel, in the background, one call each (a review run takes 10 to 20 minutes, the summary a few):
 
    ```bash
    <SKILL_DIR>/review chain run <WAVE_REPORT> <DOMAIN>
@@ -149,7 +149,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    Run it again for an item whose decision changes later: it replaces the decision. Never open or show the annotated report — it only records decisions the user has just made, from a report they already have.
 
-8. Summarize the wave — what the user decided, and what the applied changes touched — then ask once which move comes next: repeat the domains this wave ran, or move to the ones it left out, named as phases when the wave ran a phase. Ending the loop is not offered as a third: it is what happens when no wave is asked for.
+8. Summarize the wave — what the user decided, and what the applied changes touched — then ask once which move comes next: repeat the domains this wave ran, or move to the ones it left out, named as phases when the wave ran a phase. A wave that ran every domain leaves only the repeat to offer. Ending the loop is not offered as a third: it is what happens when no wave is asked for.
 
 9. Wait. The user now reviews the changes, may ask questions or request further edits, and squashes into the reviewed revision. Launch the next wave only on their explicit go, never before: reviews must only ever see squashed state. Step 8's question is never restated; a loop nobody comes back to is over.
 

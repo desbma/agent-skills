@@ -967,9 +967,15 @@ def cmd_init(args: argparse.Namespace) -> None:
         if args.repeat:
             raise SystemExit("The first wave of a loop repeats nothing")
         loop_caps = derive_loop_caps(change)
+        if args.domains is None:
+            args.domains = (
+                tuple(Domain) if set(loop_caps.values()) == {1} else PHASE_DOMAINS["A"]
+            )
         loop_caps.update(parse_caps(args.cap))
         loop_judge = judge_alias(args.judge)
     else:
+        if args.domains is None:
+            raise SystemExit("A later wave names its phase or its domains")
         previous = read_metadata(reports[wave - 1])
         if not report_is_formatted(read_lines(previous.report)):
             raise SystemExit(f"Wave {wave - 1} is not formatted yet")
@@ -1748,9 +1754,10 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("review_dir", help="Directory holding the review files")
     init.add_argument(
         "domains",
+        nargs="?",
         type=wave_domains,
         metavar="{A,B,DOMAIN[,DOMAIN...]}",
-        help="Phase of the wave, or the comma separated domains it runs",
+        help="Phase of the wave, or the comma separated domains it runs (default on the first wave: every domain on a single run diff, phase A otherwise)",
     )
     init.add_argument(
         "--revision",

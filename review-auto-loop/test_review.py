@@ -830,6 +830,32 @@ class WaveTest(WaveFixture):
         for domain in ("readability", "tests"):
             self.assertTrue(Path(review_dir, f"{REV}-wave1-{domain}").is_dir())
 
+    def test_init_runs_every_domain_on_a_single_run_diff(self) -> None:
+        """Run all four domains on a first wave naming none, when the diff alone caps every chain at one run."""
+        review_dir = Path(self.review_dir, "single-run")
+        review_dir.mkdir()
+        out = self.run_init(review_dir, "--cap", "correctness=2").splitlines()
+        self.assertEqual(out[2:], ["correctness", "readability", "tests", "docs"])
+        self.assertEqual(
+            review.read_metadata(Path(out[1])).domain_caps,
+            {"correctness": 2, "readability": 1, "tests": 1, "docs": 1},
+        )
+
+    def test_init_runs_phase_a_on_a_larger_diff(self) -> None:
+        """Run phase A on a first wave naming no domain, when a chain runs more than once."""
+        review_dir = Path(self.review_dir, "larger")
+        review_dir.mkdir()
+        self.jj["diff_summary"].return_value = "2 files changed, 100 insertions(+)"
+        self.assertEqual(
+            self.run_init(review_dir).splitlines()[2:], ["correctness", "readability"]
+        )
+
+    def test_init_wants_the_domains_of_a_later_wave(self) -> None:
+        """Refuse a later wave naming no phase and no domain."""
+        self.decided_second_wave()
+        with self.assertRaisesRegex(SystemExit, "names its phase or its domains"):
+            self.run_init(self.review_dir)
+
     def test_init_refuses_a_malformed_domain_list(self) -> None:
         """Fail on an unknown domain, a repeated one, a phase inside a list, and an empty name."""
         review_dir = Path(self.review_dir, "malformed")
