@@ -55,8 +55,8 @@ CAP_SCALES = collections.defaultdict(
 )
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent
-REVIEWER_MODEL = "openai-codex/gpt-6-astra:medium"
-REVIEWER_MODEL_NAME = "GPT 6 Astra medium"
+REVIEWER_MODEL = "openai-codex/gpt-6-astra:xhigh"
+REVIEWER_MODEL_NAME = "GPT 6 Astra xhigh"
 SUMMARY_MODEL = "openai-codex/gpt-5.6-terra:medium"
 JUDGE_MODELS = {"astra": "GPT 6 Astra max", "fable": "Fable 5.1 xhigh"}
 NO_JUDGE = "none"
