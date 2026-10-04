@@ -39,6 +39,8 @@ Keeping the change within the reviewed diff never justifies dropping a real impr
 
 **Is there a better fix?** A fix can be correct, complete and concise and still not be the best one. Look for a course that fixes the same defect by construction: one that removes the state, branch or duplication the defect lives in instead of adding a check that guards it, or one whose single change resolves several items of the wave at once. Prefer it when it is at least as correct and has a concrete advantage: fewer lines of production code, fewer items left to apply, or an invalid state that can no longer be expressed.
 
+In documentation, rewording around the general case fixes staleness by construction, where appending the case a change added only puts it off to the next change.
+
 When one course resolves several items, recommend it on the item it most directly fixes, and on each other item say which item's fix covers it.
 
 **Can it be reached?** A defect may hold against the code and still have no path to it from real use: the only caller never passes that value, or the window opens only when the procedure driving the code is broken. Asking this is not re-deriving the defect — whether the code is wrong is settled — it is weighing what the fix has to carry.
