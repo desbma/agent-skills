@@ -15,7 +15,7 @@ Personal [coding agent skills](https://agentskills.io/).
 ## General
 
 - Skills are agent-agnostic.
-- Some skills start `pi` agent subprocesses for reviews, regardless of the main agent.
+- Some skills start `pi` agent subprocesses for reviews, and a `claude` one for the opt-in judge, regardless of the main agent.
 - Some skills hardcode the model used for reviews. I had the best results with OpenAI's GPT.
 
 ## Content

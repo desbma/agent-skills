@@ -619,7 +619,7 @@ class WaveFixture(CliFixture):
     def judge_if_due(self, *identifiers: str, report: Path | None = None) -> None:
         """Run the judge of a wave whose loop enabled one."""
         target = self.report if report is None else report
-        if review.read_metadata(target).judge is not None:
+        if review.read_metadata(target).judge:
             self.judge(*identifiers, report=target)
 
     def second_wave(self, assessor: str = ASSESSOR) -> Path:
@@ -647,9 +647,9 @@ class WaveFixture(CliFixture):
         self.decide(identifier, report=second)
         return second
 
-    def third_wave(self, *judge: str) -> Path:
+    def third_wave(self, *flags: str) -> Path:
         """Open a phase A wave over two decided ones, its correctness chain holding the items."""
-        third = self.init(self.review_dir, "A", *judge)
+        third = self.init(self.review_dir, "A", *flags)
         chain = Path(self.review_dir, f"{REV}-wave3-correctness")
         Path(chain, "run1.md").write_text(CAPTURE)
         Path(chain, "run2.md").write_text("Nothing.\n")
@@ -866,15 +866,13 @@ class WaveTest(WaveFixture):
     def test_init_names_no_judge_by_default(self) -> None:
         """Leave a loop nobody asked a judge for without a judge field."""
         metadata = review.read_metadata(self.report)
-        self.assertEqual((metadata.loop_judge, metadata.judge), (None, None))
+        self.assertEqual((metadata.loop_judge, metadata.judge), (False, False))
 
     def test_an_unjudged_loop_takes_a_judge_on_a_later_wave(self) -> None:
         """Turn the judge on for one wave of a loop that opened without one."""
         self.decided_second_wave()
-        third = review.read_metadata(
-            self.init(self.review_dir, "A", "--judge", "astra")
-        )
-        self.assertEqual((third.loop_judge, third.judge), (None, "astra"))
+        third = review.read_metadata(self.init(self.review_dir, "A", "--judge"))
+        self.assertEqual((third.loop_judge, third.judge), (False, True))
 
     def test_import_creates_sections_in_canonical_order(self) -> None:
         """Put the readability section after the correctness one whatever the order of the calls."""
@@ -1543,9 +1541,9 @@ class WaveTest(WaveFixture):
 
 
 class JudgedFixture(WaveFixture):
-    """A review dir whose loop was opened under the astra judge."""
+    """A review dir whose loop was opened under the judge."""
 
-    init_args = ("--judge", "astra")
+    init_args = ("--judge",)
 
 
 class JudgeSettingTest(JudgedFixture):
@@ -1554,29 +1552,21 @@ class JudgeSettingTest(JudgedFixture):
     def test_init_records_the_judge_of_the_loop(self) -> None:
         """Record the judge of the first wave as the loop's own and as the wave's."""
         metadata = review.read_metadata(self.report)
-        self.assertEqual((metadata.loop_judge, metadata.judge), ("astra", "astra"))
-        self.assertIn("loop_judge=astra judge=astra", self.report.read_text())
+        self.assertEqual((metadata.loop_judge, metadata.judge), (True, True))
+        self.assertIn("loop_judge=true judge=true", self.report.read_text())
 
     def test_a_later_wave_inherits_the_judge(self) -> None:
-        """Judge a later wave the loop's own judge, with no flag to restate."""
+        """Judge a later wave, with no flag to restate."""
         second = review.read_metadata(self.second_wave())
-        self.assertEqual((second.loop_judge, second.judge), ("astra", "astra"))
-
-    def test_a_later_wave_overrides_the_judge_for_itself(self) -> None:
-        """Take a judge named after the first wave for that wave alone, the loop's standing."""
-        self.decided_second_wave()
-        third = review.read_metadata(
-            self.init(self.review_dir, "A", "--judge", "fable")
-        )
-        self.assertEqual((third.loop_judge, third.judge), ("astra", "fable"))
+        self.assertEqual((second.loop_judge, second.judge), (True, True))
 
     def test_the_wave_after_an_override_reverts_to_the_loop(self) -> None:
         """Leave a wave that asked for no judge unjudged, and revert to the loop's judge on the next."""
         self.decided_second_wave()
-        third = self.init(self.review_dir, "A", "--judge", "none")
+        third = self.init(self.review_dir, "A", "--no-judge")
         metadata = review.read_metadata(third)
-        self.assertEqual((metadata.loop_judge, metadata.judge), ("astra", None))
-        self.assertIn("loop_judge=astra ", third.read_text())
+        self.assertEqual((metadata.loop_judge, metadata.judge), (True, False))
+        self.assertIn("loop_judge=true ", third.read_text())
         self.assertNotIn(" judge=", third.read_text())
         Path(self.review_dir, f"{REV}-wave3-correctness", "run1.md").write_text(
             "Nothing.\n"
@@ -1587,45 +1577,31 @@ class JudgeSettingTest(JudgedFixture):
         self.write_summary(third)
         self.run_cli("report", "format", third)
         fourth = review.read_metadata(self.init(self.review_dir, "A"))
-        self.assertEqual((fourth.loop_judge, fourth.judge), ("astra", "astra"))
+        self.assertEqual((fourth.loop_judge, fourth.judge), (True, True))
 
-    def test_an_unknown_judge_is_refused(self) -> None:
-        """Refuse an alias no runner knows, on the command line and in a report's comment."""
-        review_dir = Path(self.review_dir, "unknown")
-        review_dir.mkdir()
-        self.assert_cli_error(
-            "init", review_dir, "A", "--assessor", ASSESSOR, "--judge", "solon"
-        )
+    def test_a_judge_field_holding_another_value_is_refused(self) -> None:
+        """Refuse a judge field holding a value init never writes."""
         stray = Path(self.review_dir, f"{REV}-wave3-202608261252.md")
         stray.write_text(
             f"<!-- review: change_id={CHANGE_ID} wave=3 "
             "loop=correctness:1,readability:1,tests:1,docs:1 "
-            f"assessor='{ASSESSOR}' judge=solon correctness=1 -->\n"
+            f"assessor='{ASSESSOR}' judge=fable correctness=1 -->\n"
         )
         self.assertRaises(SystemExit, review.read_metadata, stray)
 
 
 class JudgeArgvTest(unittest.TestCase):
-    """The command line each judge alias runs under."""
+    """The command line the judge runs under."""
 
-    def test_astra_runs_under_pi(self) -> None:
-        """Run astra as a pi agent over the repository's judge skill, reading and searching only."""
-        argv = review.judge_argv("astra", "judge it")
-        self.assertEqual(argv[0], "pi")
-        self.assertIn("openai-codex/gpt-6-astra:max", argv)
-        self.assertIn(str(review.SKILLS_DIR / "review-judge"), argv)
-        self.assertEqual(argv[argv.index("--tools") + 1], "read,grep,find,ls")
-        self.assertEqual(argv[-1], "/skill:review-judge judge it")
-
-    def test_fable_runs_under_claude(self) -> None:
-        """Run fable as a claude agent resolving the judge skill by name, reading and searching only."""
-        argv = review.judge_argv("fable", "judge it")
+    def test_it_runs_under_claude(self) -> None:
+        """Run a claude agent resolving the judge skill by name, reading and searching only."""
+        argv = review.judge_argv("judge it")
         self.assertEqual(argv[0], "claude")
-        self.assertIn("claude-fable-5-1", argv)
+        self.assertEqual(argv[argv.index("--model") + 1], "claude-fable-5-1")
         self.assertEqual(argv[argv.index("--effort") + 1], "xhigh")
         self.assertEqual(argv[argv.index("--tools") + 1], "Read,Grep,Glob")
         self.assertIn("--strict-mcp-config", argv)
-        self.assertEqual(argv[-1], "/review-judge judge it")
+        self.assertEqual(argv[-2:], ["-p", "/review-judge judge it"])
 
 
 class JudgeCheckTest(unittest.TestCase):
@@ -1774,20 +1750,21 @@ class JudgeRunTest(JudgedFixture):
         self.assertEqual(capture.read_text(), output)
 
     def test_it_runs_the_judge_from_the_repository_root(self) -> None:
-        """Run the wave's own judge alias, from the root the reviewers run from."""
+        """Run the judge from the root the reviewers run from."""
         self.ready()
         self.judge("C1", "C2")
-        self.assertEqual(self.spawn.call_args.args[0][0], "pi")
-        self.assertIn("openai-codex/gpt-6-astra:max", self.spawn.call_args.args[0])
+        self.assertEqual(self.spawn.call_args.args[0][0], "claude")
         self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
 
-    def test_it_runs_the_judge_the_wave_names(self) -> None:
-        """Run the alias of the wave's own judge, not the one the loop opened under."""
+    def test_a_wave_opting_out_is_formatted_unjudged(self) -> None:
+        """Refuse to judge a wave that opted out of the loop's judge, and format it without one."""
         self.decided_second_wave()
-        third = self.third_wave("--judge", "fable")
+        third = self.third_wave("--no-judge")
         identifiers = self.imported_assessed("correctness", report=third)
-        self.judge(*identifiers, report=third)
-        self.assertEqual(self.spawn.call_args.args[0][0], "claude")
+        with self.assertRaisesRegex(SystemExit, "runs no judge"):
+            self.judge(*identifiers, report=third)
+        self.run_cli("report", "format", third)
+        self.assertNotIn("**Judge", third.read_text())
 
     def test_the_prompt_names_every_input(self) -> None:
         """Name the report, the diff dump and the summary, all absolute, and no earlier wave."""
@@ -2026,7 +2003,7 @@ class JudgeReportTest(JudgedFixture):
         self.run_cli("report", "format", self.report)
         self.assertIn(
             f"- **Reviewer model**: {review.REVIEWER_MODEL_NAME}\n"
-            f"- **Judge model**: {review.JUDGE_MODELS['astra']}\n",
+            f"- **Judge model**: {review.JUDGE_MODEL_NAME}\n",
             self.report.read_text(),
         )
 
@@ -2132,10 +2109,10 @@ class JudgeGridTest(JudgedFixture):
         return cell.strip()
 
     def test_the_config_line_names_the_judge(self) -> None:
-        """Name the wave's judge on the config line, by its alias rather than its model."""
+        """Name the judge on the config line of a judged wave."""
         self.ready()
         self.assertIn(
-            " Wave config: correctness ≤2 · readability ≤2 · Astra judge",
+            " Wave config: correctness ≤2 · readability ≤2 · judge",
             self.header(),
         )
 
@@ -2198,6 +2175,17 @@ class UnjudgedWaveTest(WaveFixture):
         self.assertEqual(recap, "2 items · 2 apply\n\n- apply: C1, C2\n")
         for identifier in identifiers:
             self.decide(identifier)
+
+    def test_a_wave_opting_in_is_judged(self) -> None:
+        """Judge a wave that opted into the judge its loop runs without."""
+        self.decided_second_wave()
+        third = self.third_wave("--judge")
+        identifiers = self.imported_assessed("correctness", report=third)
+        self.judge(*identifiers, report=third)
+        self.run_cli("report", "format", third)
+        self.assertIn(
+            f"- **Judge model**: {review.JUDGE_MODEL_NAME}", third.read_text()
+        )
 
     def test_an_assessment_that_rules_on_itself_is_refused(self) -> None:
         """Refuse to format a wave whose assessment carries a judgment no judge wrote."""
@@ -2482,15 +2470,16 @@ class WorkflowTest(CliFixture):
     """A whole loop of waves, driven only through the command line."""
 
     def setUp(self) -> None:
-        """Sandbox a review dir, a repository root, and a stub reviewer on PATH."""
+        """Sandbox a review dir, a repository root, and stub agents on PATH."""
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.review_dir, self.bin = root / "reviews", root / "bin"
         self.review_dir.mkdir()
         self.bin.mkdir()
         self.output = self.bin / "output"
-        stub = self.bin / "pi"
-        stub.write_text(f'#!/bin/sh\ncat "{self.output}"\n')
-        stub.chmod(0o755)
+        for agent in ("pi", "claude"):
+            stub = self.bin / agent
+            stub.write_text(f'#!/bin/sh\ncat "{self.output}"\n')
+            stub.chmod(0o755)
         self.enterContext(
             mock.patch.dict(os.environ, {"PATH": f"{self.bin}:{os.environ['PATH']}"})
         )
@@ -2637,7 +2626,7 @@ class WorkflowTest(CliFixture):
 
     def test_a_judged_wave(self) -> None:
         """Run a wave under a judge end to end, its recommendations reaching the report and the recap."""
-        report, _ = self.open_wave("correctness,docs", "--judge", "astra")
+        report, _ = self.open_wave("correctness,docs", "--judge")
         code, _ = self.chain_to_its_end(
             report, "correctness", ONE_ITEM, "Nothing to report.\n"
         )
@@ -2648,7 +2637,7 @@ class WorkflowTest(CliFixture):
         recap = self.run_cli("report", "format", report)
         self.assertEqual(recap.splitlines()[-1], "│  - agreed: C1")
         lines = report.read_text().splitlines()
-        self.assertIn(f"- **Judge model**: {review.JUDGE_MODELS['astra']}", lines)
+        self.assertIn(f"- **Judge model**: {review.JUDGE_MODEL_NAME}", lines)
         self.assertIn(
             "  - [C1 / major / holds, apply / agree](#c1-run-1-item-1)", lines
         )

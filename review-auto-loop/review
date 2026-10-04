@@ -58,8 +58,7 @@ SKILLS_DIR = Path(__file__).resolve().parent.parent
 REVIEWER_MODEL = "openai-codex/gpt-6-astra:xhigh"
 REVIEWER_MODEL_NAME = "GPT 6 Astra xhigh"
 SUMMARY_MODEL = "openai-codex/gpt-5.6-terra:medium"
-JUDGE_MODELS = {"astra": "GPT 6 Astra max", "fable": "Fable 5.1 xhigh"}
-NO_JUDGE = "none"
+JUDGE_MODEL_NAME = "Fable 5.1 xhigh"
 SUMMARY_PARSER = markdown_it.MarkdownIt("commonmark").enable("table")
 PARAGRAPH_TOKENS = frozenset({"paragraph_open", "inline", "paragraph_close"})
 SKILL_URL = "https://github.com/desbma/agent-skills/tree/master/review-auto-loop"
@@ -205,8 +204,8 @@ class ReportMetadata:
     assessor: str
     loop_caps: dict[Domain, int]
     domain_caps: dict[Domain, int]
-    loop_judge: str | None
-    judge: str | None
+    loop_judge: bool
+    judge: bool
 
     @property
     def active(self) -> tuple[Domain, ...]:
@@ -358,17 +357,12 @@ def config_text(domain_caps: dict[Domain, int]) -> str:
     )
 
 
-def judge_alias(value: str | None) -> str | None:
-    """Read a judge alias, `none` and an absent value alike standing for no judge."""
-    return None if value == NO_JUDGE else value
-
-
-def read_judge(fields: dict[str, str], name: str) -> str | None:
-    """Read a judge alias off a review comment's field, refusing one no runner knows."""
-    alias = fields.get(name)
-    if alias is not None and alias not in JUDGE_MODELS:
-        raise SystemExit(f"Not a judge alias: {alias}")
-    return alias
+def read_flag(fields: dict[str, str], name: str) -> bool:
+    """Read a flag off a review comment's field, set when the field is present."""
+    value = fields.get(name)
+    if value not in (None, "true"):
+        raise SystemExit(f"Not a flag value: {name}={value}")
+    return value is not None
 
 
 def read_metadata(report: Path) -> ReportMetadata:
@@ -404,8 +398,8 @@ def read_metadata(report: Path) -> ReportMetadata:
         assessor=fields["assessor"],
         loop_caps=parse_loop_caps(fields["loop"]),
         domain_caps=domain_caps,
-        loop_judge=read_judge(fields, "loop_judge"),
-        judge=read_judge(fields, "judge"),
+        loop_judge=read_flag(fields, "loop_judge"),
+        judge=read_flag(fields, "judge"),
     )
 
 
@@ -877,11 +871,7 @@ def render_markdown(
         "",
         f"- **Assessor model**: {metadata.assessor}",
         f"- **Reviewer model**: {REVIEWER_MODEL_NAME}",
-        *(
-            [f"- **Judge model**: {JUDGE_MODELS[metadata.judge]}"]
-            if metadata.judge is not None
-            else []
-        ),
+        *([f"- **Judge model**: {JUDGE_MODEL_NAME}"] if metadata.judge else []),
         f"- **Config**: {config_text(metadata.domain_caps)}",
         f"- **Review count**: {state.total} total",
         f"- **Diff**: {stat}",
@@ -972,7 +962,7 @@ def cmd_init(args: argparse.Namespace) -> None:
                 tuple(Domain) if set(loop_caps.values()) == {1} else PHASE_DOMAINS["A"]
             )
         loop_caps.update(parse_caps(args.cap))
-        loop_judge = judge_alias(args.judge)
+        loop_judge = bool(args.judge)
     else:
         if args.domains is None:
             raise SystemExit("A later wave names its phase or its domains")
@@ -982,7 +972,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         decided_counts(previous.report)
         loop_caps = previous.loop_caps
         loop_judge = previous.loop_judge
-    judge = loop_judge if args.judge is None else judge_alias(args.judge)
+    judge = loop_judge if args.judge is None else args.judge
     domain_caps = wave_caps(args, loop_caps)
     chains = {
         domain: review_dir / f"{short_change_id}-wave{wave}-{domain}"
@@ -996,9 +986,9 @@ def cmd_init(args: argparse.Namespace) -> None:
     report = review_dir / f"{short_change_id}-wave{wave}-{stamp}.md"
     loop = ",".join(f"{domain}:{cap}" for domain, cap in loop_caps.items())
     judges = "".join(
-        f" {name}={alias}"
-        for name, alias in (("loop_judge", loop_judge), ("judge", judge))
-        if alias is not None
+        f" {name}=true"
+        for name, flag in (("loop_judge", loop_judge), ("judge", judge))
+        if flag
     )
     fields = " ".join(f"{domain}={cap}" for domain, cap in domain_caps.items())
     comment = (
@@ -1040,7 +1030,7 @@ def read_summary(metadata: ReportMetadata) -> str:
     return summary.read_text().strip()
 
 
-def pi_argv(model: str, skill: str, prompt: str, *flags: str) -> list[str]:
+def pi_argv(model: str, skill: str, prompt: str) -> list[str]:
     """Build the command line of a pi agent run under a single skill, its prompt last."""
     return [
         "pi",
@@ -1049,7 +1039,6 @@ def pi_argv(model: str, skill: str, prompt: str, *flags: str) -> list[str]:
         "--no-skills",
         "--skill",
         str(SKILLS_DIR / skill),
-        *flags,
         "-p",
         prompt,
     ]
@@ -1166,31 +1155,21 @@ def judge_path(metadata: ReportMetadata) -> Path:
     )
 
 
-def judge_argv(alias: str, prompt: str) -> list[str]:
-    """Build the command line of the judge an alias names, reading and searching only."""
-    if alias == "astra":
-        return pi_argv(
-            "openai-codex/gpt-6-astra:max",
-            "review-judge",
-            f"/skill:review-judge {prompt}",
-            "--tools",
-            "read,grep,find,ls",
-        )
-    if alias == "fable":
-        return [
-            "claude",
-            "--model",
-            "claude-fable-5-1",
-            "--effort",
-            "xhigh",
-            "--tools",
-            "Read,Grep,Glob",
-            # MCP servers reach the judge as deferred tools, past --tools
-            "--strict-mcp-config",
-            "-p",
-            f"/review-judge {prompt}",
-        ]
-    raise SystemExit(f"Not a judge alias: {alias}")
+def judge_argv(prompt: str) -> list[str]:
+    """Build the command line of the judge, reading and searching only."""
+    return [
+        "claude",
+        "--model",
+        "claude-fable-5-1",
+        "--effort",
+        "xhigh",
+        "--tools",
+        "Read,Grep,Glob",
+        # MCP servers reach the judge as deferred tools, past --tools
+        "--strict-mcp-config",
+        "-p",
+        f"/review-judge {prompt}",
+    ]
 
 
 def judge_prompt(metadata: ReportMetadata, diff: Path, earlier: list[Path]) -> str:
@@ -1310,7 +1289,7 @@ def check_judgment(proposals: dict[str, tuple[str, list[str]]], capture: Path) -
 def cmd_judge_run(args: argparse.Namespace) -> None:
     """Rule on every item of the wave, and write the recommendations into the wave report."""
     metadata = read_metadata(args.report)
-    if metadata.judge is None:
+    if not metadata.judge:
         raise SystemExit("The wave runs no judge")
     capture = judge_path(metadata)
     if capture.is_file():
@@ -1338,7 +1317,7 @@ def cmd_judge_run(args: argparse.Namespace) -> None:
         diff = Path(workspace, f"{metadata.short_change_id}.diff")
         diff.write_text(jj_output(["show", metadata.change_id]))
         run_agent(
-            judge_argv(metadata.judge, judge_prompt(metadata, diff, earlier)),
+            judge_argv(judge_prompt(metadata, diff, earlier)),
             capture,
             check,
         )
@@ -1378,8 +1357,8 @@ def cmd_header_show(args: argparse.Namespace) -> None:
     state = wave_state(metadata)
     title = f" Wave {metadata.wave}, run {args.run} — {state.total} total reviews"
     config = " Wave config: " + config_text(metadata.domain_caps)
-    if metadata.judge is not None:
-        config += f" · {metadata.judge.capitalize()} judge"
+    if metadata.judge:
+        config += " · judge"
     stat = f" {diff_summary(metadata.change_id)}"
     table = fuse_judge_rows(render_grid(state, GRID_FORMAT, separate_waves=True), state)
     width = max(len(line) for line in (title, config, *table, stat))
@@ -1722,7 +1701,7 @@ def cmd_report_format(args: argparse.Namespace) -> None:
         )
     targets = anchor_targets(metadata)
     body = render_prose(lines[start:], targets)
-    check_items_complete(metadata, state, body, judged=metadata.judge is not None)
+    check_items_complete(metadata, state, body, judged=metadata.judge)
     top = render_markdown(
         state,
         metadata,
@@ -1733,7 +1712,7 @@ def cmd_report_format(args: argparse.Namespace) -> None:
     section = ["", "## Items", ""] + index if index else []
     content = top + section + body + ["", footer_line()]
     write_lines(args.report, splice([lines[0]], 1, content))
-    for line in wave_recap(body, metadata.judge is not None):
+    for line in wave_recap(body, metadata.judge):
         print(line)
 
 
@@ -1785,7 +1764,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init.add_argument(
         "--judge",
-        choices=[*JUDGE_MODELS, NO_JUDGE],
+        action=argparse.BooleanOptionalAction,
         help="Judge the wave's items, of the loop on its first wave, of this wave alone later",
     )
     init.set_defaults(func=cmd_init)

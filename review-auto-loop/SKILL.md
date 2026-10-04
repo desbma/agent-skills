@@ -1,7 +1,7 @@
 ---
 name: review-auto-loop
 description: Review Jujutsu revision changes with external pi reviewer agents, in waves of parallel per-domain review chains, driven by the user. Use only when the user asks for this loop by name, or gives the go for the next wave of a loop already underway; a request to review a revision, on its own, is not enough. Do NOT use to read, answer or apply a review that already exists and was written by something else; handle those directly, without this skill.
-argument-hint: "[JJ_REVISION] [domain=N ...] [judge=astra|fable]"
+argument-hint: "[JJ_REVISION] [domain=N ...] [judge]"
 ---
 
 # Review auto-loop
@@ -16,13 +16,13 @@ By default, a wave runs two domains in parallel: phase A waves run correctness a
 
 A wave can also run domains the phases keep apart. `review init` takes a comma separated domain list in place of the phase letter, and the wave then runs exactly the domains it names. `<domain>=<N>` arguments still set caps; when the domains they name do not fit one phase — `readability=1 tests=1` — they name the wave's domains too. A wave whose domains would fit one phase is asked for in words: "only readability this wave". Compose a wave by hand only on the user's request: one crossing the split reviews tests and docs against code its own correctness items may still change.
 
-The `review` script settles the rest of a wave's configuration on its own: it resolves the revision, numbers the wave, and caps every chain — the code domains from the number of lines the revision adds, tests and docs at one run. Two flags of `review init` carry what the user asked for, in the wording of their request:
+The `review` script settles the rest of a wave's configuration on its own: it resolves the revision, numbers the wave, and caps every chain — the code domains from the number of lines the revision adds, tests and docs at one run. Three flags of `review init` carry what the user asked for, in the wording of their request:
 
 - `--cap <domain>=<N>` overrides a cap: on the loop's first wave for the whole loop, on a later wave for that wave alone. A cap of `0` excludes the domain; a wave left with no domain is not opened.
 - `--repeat` opens a wave over the domains the loop already ran, on lower caps.
-- `--judge <alias>` runs a judge over the wave's items.
+- `--judge` runs a judge over the wave's items, `--no-judge` runs none.
 
-The judge is a separate agent, opted into with `judge=astra` or `judge=fable` on the skill invocation and absent by default. Once every item of a wave is assessed, it reads them all at once and recommends an action on each; that recommendation becomes the item's default at step 5. `--judge` on the loop's first wave sets the judge for the whole loop, and every later wave inherits it with nothing to restate. Passing it again on a later wave overrides that wave alone, `--judge none` leaving that one wave unjudged.
+The judge is a separate agent, opted into with `judge` on the skill invocation and absent by default. Once every item of a wave is assessed, it reads them all at once and recommends an action on each; that recommendation becomes the item's default at step 5. `--judge` on the loop's first wave enables the judge for the whole loop, and every later wave inherits it with nothing to restate. On a later wave, `--judge` or `--no-judge` overrides that wave alone.
 
 ## Chains
 
@@ -66,7 +66,7 @@ The decision is added once the user has picked, exactly one per item, its reason
 1. Create the wave, naming its phase or its domains:
 
    ```bash
-   <SKILL_DIR>/review init <REVIEW_DIR> [<PHASE|DOMAIN,...>] --assessor <MODEL> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat] [--judge <alias>]
+   <SKILL_DIR>/review init <REVIEW_DIR> [<PHASE|DOMAIN,...>] --assessor <MODEL> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat] [--judge | --no-judge]
    ```
 
    `--assessor` takes your own model under the display name your system prompt gives it, followed by your effort level, never an identifier like `claude-opus-5:xhigh`. The effort level lives in your environment, so let the shell expand it in place: `--assessor "Opus 5 $CLAUDE_EFFORT"` under Claude Code, `--assessor "GPT 5.6 Sol $PI_REASONING_LEVEL"` under pi. A harness exposing no effort level leaves the model named alone.
