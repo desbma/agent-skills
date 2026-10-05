@@ -11,8 +11,10 @@ import collections.abc
 import dataclasses
 import enum
 import functools
+import os
 import re
 import shlex
+import shutil
 import signal
 import string
 import subprocess
@@ -55,9 +57,11 @@ CAP_SCALES = collections.defaultdict(
 )
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent
-REVIEWER_MODEL = "openai-codex/gpt-6-astra:xhigh"
+REVIEWER_MODEL = "gpt-6-astra"
+REVIEWER_EFFORT = "xhigh"
 REVIEWER_MODEL_NAME = "GPT 6 Astra xhigh"
-SUMMARY_MODEL = "openai-codex/gpt-5.6-terra:medium"
+SUMMARY_MODEL = "gpt-5.6-terra"
+SUMMARY_EFFORT = "medium"
 JUDGE_MODEL_NAME = "Fable 5.1 xhigh"
 SUMMARY_PARSER = markdown_it.MarkdownIt("commonmark").enable("table")
 PARAGRAPH_TOKENS = frozenset({"paragraph_open", "inline", "paragraph_close"})
@@ -1030,17 +1034,29 @@ def read_summary(metadata: ReportMetadata) -> str:
     return summary.read_text().strip()
 
 
-def pi_argv(model: str, skill: str, prompt: str) -> list[str]:
-    """Build the command line of a pi agent run under a single skill, its prompt last."""
+def agent_argv(model: str, effort: str, skill: str, arguments: str) -> list[str]:
+    """Build the command line of a Codex agent run under a single skill, its prompt last."""
+    if shutil.which("hax"):
+        return [
+            "hax",
+            "--provider=codex",
+            f"--model={model}",
+            f"--effort={effort}",
+            "-p",
+            (
+                f"Read {SKILLS_DIR / skill / 'SKILL.md'} and follow its instructions. "
+                f"Arguments: {arguments}"
+            ),
+        ]
     return [
         "pi",
         "--model",
-        model,
+        f"openai-codex/{model}:{effort}",
         "--no-skills",
         "--skill",
         str(SKILLS_DIR / skill),
         "-p",
-        prompt,
+        f"/skill:{skill} {arguments}",
     ]
 
 
@@ -1064,6 +1080,8 @@ def run_agent(
                 stdin=subprocess.DEVNULL,
                 stdout=stdout,
                 cwd=jj_output(["root"]).strip(),
+                # hide discovered skills from a hax agent
+                env=os.environ | {"HAX_NO_SKILLS": "1"},
             ) as agent,
         ):
             try:
@@ -1086,10 +1104,10 @@ def run_agent(
     return running.rename(capture)
 
 
-def reviewer_prompt(domain: Domain, revision: str, chain: Path) -> str:
-    """Ask a reviewer for one domain's review of the revision, over the chain's own dir."""
+def reviewer_arguments(revision: str, chain: Path) -> str:
+    """Ask a reviewer for its review of the revision, over the chain's own dir."""
     return (
-        f"/skill:review-{domain} {revision}. In addition to the previous reviews you "
+        f"{revision}. In addition to the previous reviews you "
         f"find as usual, the directory {chain} also holds previous reviews of the same "
         "revision. Read its *.md files too, and do not raise their items again."
     )
@@ -1115,10 +1133,11 @@ def cmd_chain_run(args: argparse.Namespace) -> None:
     if ended := chain_end_reason(counts, cap):
         raise SystemExit(f"Chain {args.domain} has ended: {ended}")
     capture = run_agent(
-        pi_argv(
+        agent_argv(
             REVIEWER_MODEL,
+            REVIEWER_EFFORT,
             f"review-{args.domain}",
-            reviewer_prompt(args.domain, metadata.change_id, chain),
+            reviewer_arguments(metadata.change_id, chain),
         ),
         chain / f"run{len(counts) + 1}.md",
         check_capture,
@@ -1137,10 +1156,11 @@ def cmd_summary_run(args: argparse.Namespace) -> None:
         raise SystemExit(f"The wave already has a change summary: {summary.name}")
     print(
         run_agent(
-            pi_argv(
+            agent_argv(
                 SUMMARY_MODEL,
+                SUMMARY_EFFORT,
                 "summarize-change",
-                f"/skill:summarize-change {metadata.change_id}. Summarize that exact revision.",
+                f"{metadata.change_id}. Summarize that exact revision.",
             ),
             summary,
             check_summary,

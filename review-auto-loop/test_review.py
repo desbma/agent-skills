@@ -521,8 +521,10 @@ class CliFixture(unittest.TestCase):
         """Open a wave under an assessor and return what it printed."""
         return self.run_cli("init", *argv, "--assessor", assessor)
 
-    def run_with_agent(self, *argv: Any, output: str, status: int = 0) -> str:
-        """Run a subcommand with the agent replaced by one writing the given output."""
+    def run_with_agent(
+        self, *argv: Any, output: str, status: int = 0, hax: bool = True
+    ) -> str:
+        """Run a subcommand with the agent replaced by one writing the given output, with hax on PATH or not."""
 
         def jj(args: list[str]) -> str:
             return "/repo\n" if args == ["root"] else DIFF
@@ -533,6 +535,9 @@ class CliFixture(unittest.TestCase):
 
         with (
             mock.patch.object(review, "jj_output", side_effect=jj),
+            mock.patch.object(
+                review.shutil, "which", return_value="/usr/bin/hax" if hax else None
+            ),
             patch_agent(agent) as spawn,
         ):
             self.spawn = spawn
@@ -2205,10 +2210,12 @@ class UnjudgedWaveTest(WaveFixture):
 class ChainRunTest(WaveFixture):
     """Running a chain's next review and capturing its output."""
 
-    def run_chain(self, domain: str, output: str = ONE_ITEM, status: int = 0) -> str:
+    def run_chain(
+        self, domain: str, output: str = ONE_ITEM, status: int = 0, hax: bool = True
+    ) -> str:
         """Run a chain with the reviewer replaced by one writing the given output."""
         return self.run_with_agent(
-            "chain", "run", self.report, domain, output=output, status=status
+            "chain", "run", self.report, domain, output=output, status=status, hax=hax
         )
 
     def test_it_captures_the_reviewer_output(self) -> None:
@@ -2219,15 +2226,47 @@ class ChainRunTest(WaveFixture):
         self.assertEqual(list(self.chain("correctness").iterdir()), [capture])
 
     def test_it_runs_the_reviewer_over_the_change(self) -> None:
-        """Run the reviewer from the repository root, on the change, over the chain dir."""
-        self.run_chain("readability")
+        """Run a hax reviewer from the repository root, under the skill only, on the change, over the chain dir."""
+        with mock.patch.dict(os.environ, {"HAX_NO_SKILLS": "0"}):
+            self.run_chain("readability")
+            self.assertEqual(os.environ["HAX_NO_SKILLS"], "0")
         argv = self.spawn.call_args.args[0]
-        self.assertEqual(argv[0], "pi")
-        self.assertIn(review.REVIEWER_MODEL, argv)
-        self.assertIn(str(review.SKILLS_DIR / "review-readability"), argv)
+        self.assertEqual(
+            argv[:-1],
+            [
+                "hax",
+                "--provider=codex",
+                f"--model={review.REVIEWER_MODEL}",
+                f"--effort={review.REVIEWER_EFFORT}",
+                "-p",
+            ],
+        )
+        self.assertIn(
+            str(review.SKILLS_DIR / "review-readability" / "SKILL.md"), argv[-1]
+        )
         self.assertIn(CHANGE_ID, argv[-1])
         self.assertIn(str(self.chain("readability")), argv[-1])
+        self.assertEqual(self.spawn.call_args.kwargs["env"]["HAX_NO_SKILLS"], "1")
         self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
+
+    def test_without_hax_it_runs_a_pi_reviewer(self) -> None:
+        """Fall back on a pi reviewer under the skill only when hax is not on PATH."""
+        self.run_chain("readability", hax=False)
+        argv = self.spawn.call_args.args[0]
+        self.assertEqual(
+            argv[:-1],
+            [
+                "pi",
+                "--model",
+                f"openai-codex/{review.REVIEWER_MODEL}:{review.REVIEWER_EFFORT}",
+                "--no-skills",
+                "--skill",
+                str(review.SKILLS_DIR / "review-readability"),
+                "-p",
+            ],
+        )
+        self.assertTrue(argv[-1].startswith(f"/skill:review-readability {CHANGE_ID}"))
+        self.assertIn(str(self.chain("readability")), argv[-1])
 
     def test_the_prompt_names_the_chain_dir_absolutely(self) -> None:
         """Expand a relative report to an absolute chain dir, for the reviewer at the repository root."""
@@ -2308,7 +2347,7 @@ class ChainRunTest(WaveFixture):
         self.assertEqual(list(self.chain("correctness").iterdir()), [])
         self.assertEqual(
             self.stderr.getvalue(),
-            "Usage limit reached\nAgent run failed: pi exited 3\n",
+            "Usage limit reached\nAgent run failed: hax exited 3\n",
         )
 
     def test_a_reviewer_that_never_starts_leaves_nothing_behind(self) -> None:
@@ -2410,12 +2449,19 @@ class SummaryRunTest(WaveFixture):
         self.assertEqual(self.run_summary().strip(), str(self.summary))
         self.assertEqual(self.summary.read_text(), SUMMARY)
         argv = self.spawn.call_args.args[0]
-        self.assertEqual(argv[0], "pi")
-        self.assertIn(review.SUMMARY_MODEL, argv)
-        self.assertIn(str(review.SKILLS_DIR / "summarize-change"), argv)
         self.assertEqual(
-            argv[-1],
-            f"/skill:summarize-change {CHANGE_ID}. Summarize that exact revision.",
+            argv,
+            [
+                "hax",
+                "--provider=codex",
+                f"--model={review.SUMMARY_MODEL}",
+                f"--effort={review.SUMMARY_EFFORT}",
+                "-p",
+                (
+                    f"Read {review.SKILLS_DIR / 'summarize-change' / 'SKILL.md'} and follow "
+                    f"its instructions. Arguments: {CHANGE_ID}. Summarize that exact revision."
+                ),
+            ],
         )
         self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
         self.assert_cli_error("summary", "run", self.report)
@@ -2439,7 +2485,7 @@ class SummaryRunTest(WaveFixture):
         terminated = bin_dir / "agent.terminated"
         for name, body in {
             "jj": f'echo "{bin_dir}"',
-            "pi": f"""trap 'kill $!; touch "{terminated}"; exit 143' TERM
+            "hax": f"""trap 'kill $!; touch "{terminated}"; exit 143' TERM
 echo $$ > "{agent_pid}.tmp" && mv "{agent_pid}.tmp" "{agent_pid}"
 sleep 10 & wait""",
         }.items():
@@ -2476,7 +2522,7 @@ class WorkflowTest(CliFixture):
         self.review_dir.mkdir()
         self.bin.mkdir()
         self.output = self.bin / "output"
-        for agent in ("pi", "claude"):
+        for agent in ("hax", "claude"):
             stub = self.bin / agent
             stub.write_text(f'#!/bin/sh\ncat "{self.output}"\n')
             stub.chmod(0o755)
