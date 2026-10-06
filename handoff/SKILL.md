@@ -11,19 +11,21 @@ Write markdown handoff documents that let a fresh agent resume this work with no
 
 ## One document per path
 
-Split the conversation into the lines of work a fresh agent could pick up on its own, and write one document per line: two unrelated bugs discussed in the conversation give two documents. Competing fixes for the same bug are one line of work, and share a single document. A conversation that only ever followed one line yields one document.
+Split the conversation into the lines of work a fresh agent could pick up on its own, and write one document per line: two unrelated bugs discussed in the conversation give two documents. Changes that belong in the same commit are one line of work and share a single document, whether they are competing fixes for one bug or closely related fixes for several. A conversation that only ever followed one line yields one document.
 
 ## Files
 
-Write them in the handoff dir, named `handoff-<slug>.md`, where `<slug>` is a few kebab-case words naming the path: a fix named "fix A" for a crash on login gives `handoff-fix-A-login-crash.md`.
+Write them in the handoff dir, named `handoff-<date>[-<rank>]-<slug>.md`. `<date>` is when the set of sibling documents was first written, as `YYYYMMDDHHMM`, and every sibling shares it, including one added later. `<slug>` is a few kebab-case words naming the path: a fix for a crash on login, first written on 6 October 2026 at 14:30, gives `handoff-202610061430-fix-login-crash.md`.
 
-When a document for the path already exists, update it in place: it has to hold the state of the code and of the proposal as they stand now, so an agent resuming from it never works from a stale one.
+When some paths depend on others, every document carries a `<rank>`, its position in an order that handles each path after those it depends on. Fixes for a missing index, a login crash, a login timeout and a logout redirect, where the two login fixes share a commit that needs the index and the redirect fix builds on them, give `handoff-202610061430-1-add-session-index.md`, `handoff-202610061430-2-fix-login-crash-and-timeout.md` and `handoff-202610061430-3-fix-logout-redirect.md`. When all paths are independent, the documents carry no rank.
 
-When you are done, give the user one line per document: its absolute path, and what it carries in a few words.
+When a document for the path already exists, whatever its rank, update it in place only while its path holds work left to do: it has to hold the state of the code and of the proposal as they stand now, so an agent resuming from it never works from a stale one. Once the change it describes is implemented, do not update it; ask the user whether to delete it instead. When its rank changes, rename it, and update the pointers its siblings hold to it.
+
+When you are done, give the user one line per document, in rank order: its absolute path, and what it carries in a few words.
 
 ## Content
 
-A document is a snapshot of where its path stands, not a log of how it got there: the problem, the state of the code, and the fix or plan the conversation landed on, which takes the bulk of it. Follow with the open points, the first step on resuming, and a few sentences at most on the options dropped along the way and why. Each document stands alone — context shared between paths is written out in full in every one of them, with a one-line pointer to its siblings.
+A document is a snapshot of where its path stands, not a log of how it got there: the problem, the state of the code, and the fix or plan the conversation landed on, which takes the bulk of it. Follow with the open points, the first step on resuming, and a few sentences at most on the options dropped along the way and why. Each document stands alone — context shared between paths is written out in full in every one of them, with a one-line pointer to its siblings, naming the ones it depends on.
 
 ## Rules
 
