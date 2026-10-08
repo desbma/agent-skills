@@ -1,0 +1,94 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = ["llm==0.36", "llm-openai-codex==0.8.0"]
+# ///
+"""Search the web with OpenAI's hosted search tool, through the ChatGPT login of Codex."""
+
+import argparse
+import json
+import re
+import urllib.parse
+from typing import Any
+
+from llm.default_plugins.openai_models import WebSearch
+from llm.parts import ToolCallPart
+from llm_openai_codex import CodexResponsesModel
+
+MODEL = "gpt-6-luna"
+REASONING_EFFORT = "medium"
+SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["answer", "sources"],
+    "properties": {
+        "answer": {"type": "string"},
+        "sources": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["url", "title", "excerpt"],
+                "properties": {
+                    "url": {"type": "string"},
+                    "title": {"type": "string"},
+                    "excerpt": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+# URL in Markdown text, without the Markdown syntax around it
+URL_RE = re.compile(r"https?://(?:[^\s()<>\[\]`]|\([^\s()`]*\))+")
+TRACKING_PARAM = "utm_source=openai"
+
+
+def strip_tracking_param(match: re.Match[str]) -> str:
+    """Remove OpenAI's tracking parameter from the query of a matched URL."""
+    url = urllib.parse.urlsplit(match[0])
+    query = "&".join(param for param in url.query.split("&") if param != TRACKING_PARAM)
+    return url._replace(query=query).geturl()
+
+
+def search(query: str) -> dict[str, Any]:
+    """Ask the search model a question, and return its answer, sources and searches."""
+    response = CodexResponsesModel(MODEL).prompt(
+        query,
+        schema=SCHEMA,
+        tools=[WebSearch(external_web_access=True, include_sources=True)],
+        tool_choice="required",
+        hide_reasoning=True,
+        reasoning_effort=REASONING_EFFORT,
+    )
+    result = json.loads(response.text())
+    result["answer"] = URL_RE.sub(strip_tracking_param, result["answer"])
+    actions = [
+        part.arguments
+        for message in response.messages()
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    ]
+    result["searches"] = [
+        {
+            "type": action["type"],
+            "queries": action.get("queries"),
+            "url": action.get("url"),
+            "consulted": [source["url"] for source in action.get("sources") or ()],
+        }
+        for action in actions
+    ]
+    return result
+
+
+def main() -> None:
+    """Search the web for the command line query, and print the result as JSON."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("query", help="Question to the search model")
+    args = parser.parse_args()
+    if not args.query:
+        parser.error("Empty query")
+    print(json.dumps(search(args.query), indent=2, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
