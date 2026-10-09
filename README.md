@@ -20,6 +20,7 @@ Personal [coding agent skills](https://agentskills.io/).
 
 ## Content
 
+- [`dot-diagrams`](dot-diagrams/SKILL.md): Generate diagrams, for example to illustrate Markdown docs, from Graphviz `.dot` files.
 - [`handoff`](handoff/SKILL.md): Summarize the conversation into one self-contained document per divergent path.
 - [`implem-brake`](implem-brake/SKILL.md): Forbid the agent from touching project files until explicitly allowed again, to discuss a change without it jumping to implementation. Invoked manually with `on`/`off`.
 - [`resume-handoff`](resume-handoff/SKILL.md): Import a handoff file.
