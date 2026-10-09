@@ -20,7 +20,8 @@ Decide the scope according to the user's request formulation. If unsure, default
 
 ## Workflow
 
-Execute each task in order.
+Execute each task in order, one at a time, and never do work belonging to a later task before reaching it.
+When a command run during a task (build, tests, linters...) reports issues that a later task covers, leave them for that task, even if the current task definition says to fix all surfacing issues. For example, do not fix Clippy warnings before the _Clippy lint list update_ task, as the updated lint list may disable some of the reported lints.
 If a task is skipped, or requires no change to the code after being analyzed, simply continue to the next one.
 If a task has required some code changes, pause before executing the next task, show a _progress report_ as shown below, followed by a short description of your last changes, and wait for the user to review your work and signal you can continue.
 Once all tasks are done, show a final _progress report_.
