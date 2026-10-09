@@ -547,7 +547,7 @@ class CliFixture(unittest.TestCase):
 class WaveFixture(CliFixture):
     """A review dir carrying one phase A wave, and the helpers driving it."""
 
-    init_args: tuple[str, ...] = ()
+    init_args: tuple[str, ...] = ("--no-judge",)
 
     def setUp(self) -> None:
         """Create a review dir and the wave 1 report of a phase A wave."""
@@ -830,7 +830,7 @@ class WaveTest(WaveFixture):
             Path(out[1]).read_text(),
             f"<!-- review: change_id={CHANGE_ID} wave=1 "
             "loop=correctness:1,readability:1,tests:2,docs:1 "
-            f"assessor='{ASSESSOR}' readability=1 tests=2 -->\n",
+            f"assessor='{ASSESSOR}' loop_judge=true judge=true readability=1 tests=2 -->\n",
         )
         for domain in ("readability", "tests"):
             self.assertTrue(Path(review_dir, f"{REV}-wave1-{domain}").is_dir())
@@ -868,10 +868,11 @@ class WaveTest(WaveFixture):
         for domains in ("prose", "tests,tests", "A,B", "tests,", ""):
             self.assert_cli_error("init", review_dir, domains, "--assessor", ASSESSOR)
 
-    def test_init_names_no_judge_by_default(self) -> None:
-        """Leave a loop nobody asked a judge for without a judge field."""
+    def test_init_names_no_judge_on_a_loop_opting_out(self) -> None:
+        """Leave a loop that opted out of the judge without a judge field."""
         metadata = review.read_metadata(self.report)
         self.assertEqual((metadata.loop_judge, metadata.judge), (False, False))
+        self.assertNotIn("judge=", self.report.read_text())
 
     def test_an_unjudged_loop_takes_a_judge_on_a_later_wave(self) -> None:
         """Turn the judge on for one wave of a loop that opened without one."""
@@ -1548,14 +1549,14 @@ class WaveTest(WaveFixture):
 class JudgedFixture(WaveFixture):
     """A review dir whose loop was opened under the judge."""
 
-    init_args = ("--judge",)
+    init_args = ()
 
 
 class JudgeSettingTest(JudgedFixture):
     """The judge a loop runs under, and the override one of its waves may carry."""
 
     def test_init_records_the_judge_of_the_loop(self) -> None:
-        """Record the judge of the first wave as the loop's own and as the wave's."""
+        """Record the judge a first wave runs by default as the loop's own and as the wave's."""
         metadata = review.read_metadata(self.report)
         self.assertEqual((metadata.loop_judge, metadata.judge), (True, True))
         self.assertIn("loop_judge=true judge=true", self.report.read_text())
@@ -2165,7 +2166,7 @@ class JudgeGridTest(JudgedFixture):
 
 
 class UnjudgedWaveTest(WaveFixture):
-    """A wave of a loop that enabled no judge."""
+    """A wave of a loop that opted out of the judge."""
 
     def test_the_report_and_the_recap_carry_no_judgment(self) -> None:
         """Format a wave with no callout, no judge block and no judge recap."""
@@ -2202,7 +2203,7 @@ class UnjudgedWaveTest(WaveFixture):
             self.run_cli("report", "format", self.report)
 
     def test_judge_run_refuses_a_wave_that_runs_no_judge(self) -> None:
-        """Refuse to judge a wave whose loop enabled no judge, before it looks at anything else."""
+        """Refuse to judge a wave whose loop opted out of the judge, before it looks at anything else."""
         with self.assertRaisesRegex(SystemExit, "runs no judge"):
             self.judge()
 
@@ -2615,7 +2616,7 @@ class WorkflowTest(CliFixture):
 
     def wave_one(self) -> Path:
         """Phase A, one chain running out of items before its cap and the other reaching it."""
-        report, domains = self.open_wave("A", "--cap", "correctness=3")
+        report, domains = self.open_wave("A", "--cap", "correctness=3", "--no-judge")
         self.assertEqual(domains, ["correctness", "readability"])
         self.assert_cli_error("report", "format", report)
         code, ended = self.chain_to_its_end(
@@ -2672,7 +2673,7 @@ class WorkflowTest(CliFixture):
 
     def test_a_judged_wave(self) -> None:
         """Run a wave under a judge end to end, its recommendations reaching the report and the recap."""
-        report, _ = self.open_wave("correctness,docs", "--judge")
+        report, _ = self.open_wave("correctness,docs")
         code, _ = self.chain_to_its_end(
             report, "correctness", ONE_ITEM, "Nothing to report.\n"
         )
@@ -2695,7 +2696,7 @@ class WorkflowTest(CliFixture):
 
     def test_a_wave_over_hand_picked_domains(self) -> None:
         """Cross the phase split on a wave named by its domains, and format it like any other."""
-        report, domains = self.open_wave("correctness,docs")
+        report, domains = self.open_wave("correctness,docs", "--no-judge")
         self.assertEqual(domains, ["correctness", "docs"])
         code, ended = self.chain_to_its_end(
             report, "correctness", ONE_ITEM, "Nothing to report.\n"

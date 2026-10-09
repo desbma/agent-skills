@@ -94,23 +94,23 @@
 <!-- apply_a -->
 <g id="node3" class="node">
 <title>apply_a</title>
-<path fill="#cfe2f3" stroke="black" d="M927.36,-251.25C927.36,-251.25 849.11,-251.25 849.11,-251.25 843.11,-251.25 837.11,-245.25 837.11,-239.25 837.11,-239.25 837.11,-220.75 837.11,-220.75 837.11,-214.75 843.11,-208.75 849.11,-208.75 849.11,-208.75 927.36,-208.75 927.36,-208.75 933.36,-208.75 939.36,-214.75 939.36,-220.75 939.36,-220.75 939.36,-239.25 939.36,-239.25 939.36,-245.25 933.36,-251.25 927.36,-251.25"/>
-<text xml:space="preserve" text-anchor="middle" x="888.23" y="-233.95" font-family="Helvetica,sans-Serif" font-size="14.00">main agent</text>
-<text xml:space="preserve" text-anchor="middle" x="888.23" y="-216.7" font-family="Helvetica,sans-Serif" font-size="14.00">applies fixes</text>
+<path fill="#cfe2f3" stroke="black" d="M927.36,-255.25C927.36,-255.25 849.11,-255.25 849.11,-255.25 843.11,-255.25 837.11,-249.25 837.11,-243.25 837.11,-243.25 837.11,-224.75 837.11,-224.75 837.11,-218.75 843.11,-212.75 849.11,-212.75 849.11,-212.75 927.36,-212.75 927.36,-212.75 933.36,-212.75 939.36,-218.75 939.36,-224.75 939.36,-224.75 939.36,-243.25 939.36,-243.25 939.36,-249.25 933.36,-255.25 927.36,-255.25"/>
+<text xml:space="preserve" text-anchor="middle" x="888.23" y="-237.95" font-family="Helvetica,sans-Serif" font-size="14.00">main agent</text>
+<text xml:space="preserve" text-anchor="middle" x="888.23" y="-220.7" font-family="Helvetica,sans-Serif" font-size="14.00">applies fixes</text>
 </g>
 <!-- apply_b -->
 <g id="node4" class="node">
 <title>apply_b</title>
-<path fill="#cfe2f3" stroke="black" d="M927.36,-96.25C927.36,-96.25 849.11,-96.25 849.11,-96.25 843.11,-96.25 837.11,-90.25 837.11,-84.25 837.11,-84.25 837.11,-65.75 837.11,-65.75 837.11,-59.75 843.11,-53.75 849.11,-53.75 849.11,-53.75 927.36,-53.75 927.36,-53.75 933.36,-53.75 939.36,-59.75 939.36,-65.75 939.36,-65.75 939.36,-84.25 939.36,-84.25 939.36,-90.25 933.36,-96.25 927.36,-96.25"/>
-<text xml:space="preserve" text-anchor="middle" x="888.23" y="-78.95" font-family="Helvetica,sans-Serif" font-size="14.00">main agent</text>
-<text xml:space="preserve" text-anchor="middle" x="888.23" y="-61.7" font-family="Helvetica,sans-Serif" font-size="14.00">applies fixes</text>
+<path fill="#cfe2f3" stroke="black" d="M927.36,-82.25C927.36,-82.25 849.11,-82.25 849.11,-82.25 843.11,-82.25 837.11,-76.25 837.11,-70.25 837.11,-70.25 837.11,-51.75 837.11,-51.75 837.11,-45.75 843.11,-39.75 849.11,-39.75 849.11,-39.75 927.36,-39.75 927.36,-39.75 933.36,-39.75 939.36,-45.75 939.36,-51.75 939.36,-51.75 939.36,-70.25 939.36,-70.25 939.36,-76.25 933.36,-82.25 927.36,-82.25"/>
+<text xml:space="preserve" text-anchor="middle" x="888.23" y="-64.95" font-family="Helvetica,sans-Serif" font-size="14.00">main agent</text>
+<text xml:space="preserve" text-anchor="middle" x="888.23" y="-47.7" font-family="Helvetica,sans-Serif" font-size="14.00">applies fixes</text>
 </g>
 <!-- apply_b&#45;&gt;wave_b -->
 <g id="edge44" class="edge">
 <title>apply_b&#45;&gt;wave_b</title>
-<path fill="none" stroke="black" stroke-dasharray="5,2" d="M836.68,-61.95C816.57,-56.76 798.11,-52 798.11,-52 798.11,-52 437.75,0 437.75,0 437.75,0 106.75,0 106.75,0 106.75,0 78.56,-33.73 57.49,-58.94"/>
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M836.68,-47.95C816.57,-42.76 798.11,-38 798.11,-38 798.11,-38 437.75,0 437.75,0 437.75,0 106.75,0 106.75,0 106.75,0 78.56,-33.73 57.49,-58.94"/>
 <polygon fill="black" stroke="black" points="54.82,-56.68 51.09,-66.6 60.19,-61.17 54.82,-56.68"/>
-<text xml:space="preserve" text-anchor="middle" x="472.5" y="-10.47" font-family="Helvetica,sans-Serif" font-size="10.00">repeat</text>
+<text xml:space="preserve" text-anchor="middle" x="472.5" y="-8.52" font-family="Helvetica,sans-Serif" font-size="10.00">repeat</text>
 </g>
 <!-- correctness&#45;&gt;readability -->
 <!-- correctness_n -->
@@ -176,21 +176,20 @@
 <!-- judge_a -->
 <g id="node13" class="node">
 <title>judge_a</title>
-<path fill="#d9ead3" stroke="black" stroke-width="2" d="M600.5,-251.25C600.5,-251.25 519.25,-251.25 519.25,-251.25 513.25,-251.25 507.25,-245.25 507.25,-239.25 507.25,-239.25 507.25,-220.75 507.25,-220.75 507.25,-214.75 513.25,-208.75 519.25,-208.75 519.25,-208.75 600.5,-208.75 600.5,-208.75 606.5,-208.75 612.5,-214.75 612.5,-220.75 612.5,-220.75 612.5,-239.25 612.5,-239.25 612.5,-245.25 606.5,-251.25 600.5,-251.25"/>
-<text xml:space="preserve" text-anchor="middle" x="559.88" y="-233.95" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;judge</text>
-<text xml:space="preserve" text-anchor="middle" x="559.88" y="-216.7" font-family="Helvetica,sans-Serif" font-size="14.00">(opt&#45;in)</text>
+<path fill="#d9ead3" stroke="black" stroke-width="2" d="M600.5,-252C600.5,-252 519.25,-252 519.25,-252 513.25,-252 507.25,-246 507.25,-240 507.25,-240 507.25,-228 507.25,-228 507.25,-222 513.25,-216 519.25,-216 519.25,-216 600.5,-216 600.5,-216 606.5,-216 612.5,-222 612.5,-228 612.5,-228 612.5,-240 612.5,-240 612.5,-246 606.5,-252 600.5,-252"/>
+<text xml:space="preserve" text-anchor="middle" x="559.88" y="-229.32" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;judge</text>
 </g>
 <!-- correctness_n&#45;&gt;judge_a -->
 <g id="edge25" class="edge">
 <title>correctness_n&#45;&gt;judge_a</title>
-<path fill="none" stroke="black" d="M429.25,-274.3C450.79,-266.94 474.82,-258.72 496.29,-251.39"/>
-<polygon fill="black" stroke="black" points="497.16,-254.79 505.49,-248.24 494.9,-248.17 497.16,-254.79"/>
+<path fill="none" stroke="black" d="M433.3,-274.32C453.67,-267.77 475.94,-260.62 496,-254.18"/>
+<polygon fill="black" stroke="black" points="497,-257.54 505.45,-251.15 494.86,-250.88 497,-257.54"/>
 </g>
 <!-- readability_n&#45;&gt;judge_a -->
 <g id="edge26" class="edge">
 <title>readability_n&#45;&gt;judge_a</title>
-<path fill="none" stroke="black" d="M434.65,-233.86C454.58,-233.24 476.21,-232.57 495.76,-231.96"/>
-<polygon fill="black" stroke="black" points="495.6,-235.47 505.49,-231.66 495.39,-228.47 495.6,-235.47"/>
+<path fill="none" stroke="black" d="M434.65,-235.29C454.58,-235.08 476.21,-234.86 495.76,-234.65"/>
+<polygon fill="black" stroke="black" points="495.53,-238.16 505.49,-234.55 495.45,-231.16 495.53,-238.16"/>
 </g>
 <!-- bracket_a2 -->
 <g id="node18" class="node">
@@ -202,57 +201,56 @@
 <!-- judge_b -->
 <g id="node14" class="node">
 <title>judge_b</title>
-<path fill="#d9ead3" stroke="black" stroke-width="2" d="M600.5,-96.25C600.5,-96.25 519.25,-96.25 519.25,-96.25 513.25,-96.25 507.25,-90.25 507.25,-84.25 507.25,-84.25 507.25,-65.75 507.25,-65.75 507.25,-59.75 513.25,-53.75 519.25,-53.75 519.25,-53.75 600.5,-53.75 600.5,-53.75 606.5,-53.75 612.5,-59.75 612.5,-65.75 612.5,-65.75 612.5,-84.25 612.5,-84.25 612.5,-90.25 606.5,-96.25 600.5,-96.25"/>
-<text xml:space="preserve" text-anchor="middle" x="559.88" y="-78.95" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;judge</text>
-<text xml:space="preserve" text-anchor="middle" x="559.88" y="-61.7" font-family="Helvetica,sans-Serif" font-size="14.00">(opt&#45;in)</text>
+<path fill="#d9ead3" stroke="black" stroke-width="2" d="M600.5,-79C600.5,-79 519.25,-79 519.25,-79 513.25,-79 507.25,-73 507.25,-67 507.25,-67 507.25,-55 507.25,-55 507.25,-49 513.25,-43 519.25,-43 519.25,-43 600.5,-43 600.5,-43 606.5,-43 612.5,-49 612.5,-55 612.5,-55 612.5,-67 612.5,-67 612.5,-73 606.5,-79 600.5,-79"/>
+<text xml:space="preserve" text-anchor="middle" x="559.88" y="-56.33" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;judge</text>
 </g>
 <!-- tests_n&#45;&gt;judge_b -->
 <g id="edge40" class="edge">
 <title>tests_n&#45;&gt;judge_b</title>
-<path fill="none" stroke="black" d="M415.23,-83.18C439.67,-81.79 469.43,-80.09 495.51,-78.61"/>
-<polygon fill="black" stroke="black" points="495.52,-82.11 505.31,-78.05 495.12,-75.13 495.52,-82.11"/>
+<path fill="none" stroke="black" d="M415.23,-79.59C439.67,-76.43 469.43,-72.58 495.51,-69.2"/>
+<polygon fill="black" stroke="black" points="495.85,-72.69 505.32,-67.93 494.95,-65.75 495.85,-72.69"/>
 </g>
 <!-- docs_n&#45;&gt;judge_b -->
 <g id="edge41" class="edge">
 <title>docs_n&#45;&gt;judge_b</title>
-<path fill="none" stroke="black" d="M414.48,-38.36C439.12,-44.62 469.32,-52.28 495.72,-58.98"/>
-<polygon fill="black" stroke="black" points="494.75,-62.34 505.3,-61.41 496.47,-55.56 494.75,-62.34"/>
+<path fill="none" stroke="black" d="M414.48,-34.83C439.12,-39.3 469.32,-44.77 495.72,-49.55"/>
+<polygon fill="black" stroke="black" points="494.82,-52.95 505.28,-51.29 496.07,-46.06 494.82,-52.95"/>
 </g>
 <!-- user_a -->
 <g id="node15" class="node">
 <title>user_a</title>
-<ellipse fill="lightgrey" stroke="black" cx="724.8" cy="-230" rx="73.3" ry="18"/>
-<text xml:space="preserve" text-anchor="middle" x="724.8" y="-225.32" font-family="Helvetica,sans-Serif" font-size="14.00">user decides</text>
+<ellipse fill="lightgrey" stroke="black" cx="724.8" cy="-234" rx="73.3" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="724.8" y="-229.32" font-family="Helvetica,sans-Serif" font-size="14.00">user decides</text>
 </g>
 <!-- judge_a&#45;&gt;user_a -->
 <g id="edge27" class="edge">
 <title>judge_a&#45;&gt;user_a</title>
-<path fill="none" stroke="black" d="M612.87,-230C621.55,-230 630.74,-230 639.97,-230"/>
-<polygon fill="black" stroke="black" points="639.7,-233.5 649.7,-230 639.7,-226.5 639.7,-233.5"/>
+<path fill="none" stroke="black" d="M612.87,-234C621.55,-234 630.74,-234 639.97,-234"/>
+<polygon fill="black" stroke="black" points="639.7,-237.5 649.7,-234 639.7,-230.5 639.7,-237.5"/>
 </g>
 <!-- user_b -->
 <g id="node16" class="node">
 <title>user_b</title>
-<ellipse fill="lightgrey" stroke="black" cx="724.8" cy="-75" rx="73.3" ry="18"/>
-<text xml:space="preserve" text-anchor="middle" x="724.8" y="-70.33" font-family="Helvetica,sans-Serif" font-size="14.00">user decides</text>
+<ellipse fill="lightgrey" stroke="black" cx="724.8" cy="-61" rx="73.3" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="724.8" y="-56.33" font-family="Helvetica,sans-Serif" font-size="14.00">user decides</text>
 </g>
 <!-- judge_b&#45;&gt;user_b -->
 <g id="edge42" class="edge">
 <title>judge_b&#45;&gt;user_b</title>
-<path fill="none" stroke="black" d="M612.87,-75C621.55,-75 630.74,-75 639.97,-75"/>
-<polygon fill="black" stroke="black" points="639.7,-78.5 649.7,-75 639.7,-71.5 639.7,-78.5"/>
+<path fill="none" stroke="black" d="M612.87,-61C621.55,-61 630.74,-61 639.97,-61"/>
+<polygon fill="black" stroke="black" points="639.7,-64.5 649.7,-61 639.7,-57.5 639.7,-64.5"/>
 </g>
 <!-- user_a&#45;&gt;apply_a -->
 <g id="edge28" class="edge">
 <title>user_a&#45;&gt;apply_a</title>
-<path fill="none" stroke="black" d="M798.49,-230C807.45,-230 816.55,-230 825.33,-230"/>
-<polygon fill="black" stroke="black" points="825.14,-233.5 835.14,-230 825.14,-226.5 825.14,-233.5"/>
+<path fill="none" stroke="black" d="M798.49,-234C807.45,-234 816.55,-234 825.33,-234"/>
+<polygon fill="black" stroke="black" points="825.14,-237.5 835.14,-234 825.14,-230.5 825.14,-237.5"/>
 </g>
 <!-- user_b&#45;&gt;apply_b -->
 <g id="edge43" class="edge">
 <title>user_b&#45;&gt;apply_b</title>
-<path fill="none" stroke="black" d="M798.49,-75C807.45,-75 816.55,-75 825.33,-75"/>
-<polygon fill="black" stroke="black" points="825.14,-78.5 835.14,-75 825.14,-71.5 825.14,-78.5"/>
+<path fill="none" stroke="black" d="M798.49,-61C807.45,-61 816.55,-61 825.33,-61"/>
+<polygon fill="black" stroke="black" points="825.14,-64.5 835.14,-61 825.14,-57.5 825.14,-64.5"/>
 </g>
 <!-- bracket_a1&#45;&gt;bracket_a2 -->
 <g id="edge17" class="edge">
@@ -290,15 +288,15 @@
 <!-- repeat_a2&#45;&gt;repeat_a3 -->
 <g id="edge31" class="edge">
 <title>repeat_a2&#45;&gt;repeat_a3</title>
-<path fill="none" stroke="black" stroke-dasharray="5,2" d="M365.8,-180C369.67,-180.17 613.69,-190.66 621.32,-190.99"/>
-<text xml:space="preserve" text-anchor="middle" x="472.5" y="-188.49" font-family="Helvetica,sans-Serif" font-size="10.00">repeat</text>
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M365.8,-180C369.67,-180.06 613.69,-183.88 621.32,-184"/>
+<text xml:space="preserve" text-anchor="middle" x="472.5" y="-185.15" font-family="Helvetica,sans-Serif" font-size="10.00">repeat</text>
 </g>
 <!-- note_2 -->
 <!-- repeat_a2&#45;&gt;note_2 -->
 <!-- repeat_a3&#45;&gt;apply_a -->
 <g id="edge32" class="edge">
 <title>repeat_a3&#45;&gt;apply_a</title>
-<path fill="none" stroke="black" stroke-dasharray="5,2" d="M622.71,-191.01C624.8,-191.12 641.5,-192 641.5,-192 641.5,-192 641.5,-192 818.11,-192 818.11,-192 832.3,-199.8 847.83,-208.34"/>
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M622.71,-184.07C624.8,-184.73 641.5,-190 641.5,-190 641.5,-190 641.5,-190 818.11,-190 818.11,-190 835.66,-201.17 853.08,-212.26"/>
 </g>
 <!-- note -->
 <!-- note_1&#45;&gt;note -->
@@ -324,7 +322,7 @@
 <!-- handoff_2&#45;&gt;apply_a -->
 <g id="edge35" class="edge">
 <title>handoff_2&#45;&gt;apply_a</title>
-<path fill="none" stroke="black" stroke-width="2" d="M365.83,-143.01C369.03,-143.37 471.5,-155 471.5,-155 471.5,-155 471.5,-155 818.11,-155 818.11,-155 846.83,-186.16 867.24,-208.31"/>
+<path fill="none" stroke="black" stroke-width="2" d="M365.83,-143.01C369.03,-143.22 471.5,-150 471.5,-150 471.5,-150 471.5,-150 818.11,-150 818.11,-150 848.95,-187.48 869.43,-212.37"/>
 </g>
 <!-- handoff_2&#45;&gt;bracket_b2 -->
 </g>

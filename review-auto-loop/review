@@ -966,7 +966,7 @@ def cmd_init(args: argparse.Namespace) -> None:
                 tuple(Domain) if set(loop_caps.values()) == {1} else PHASE_DOMAINS["A"]
             )
         loop_caps.update(parse_caps(args.cap))
-        loop_judge = bool(args.judge)
+        loop_judge = args.judge is not False
     else:
         if args.domains is None:
             raise SystemExit("A later wave names its phase or its domains")
@@ -1785,7 +1785,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument(
         "--judge",
         action=argparse.BooleanOptionalAction,
-        help="Judge the wave's items, of the loop on its first wave, of this wave alone later",
+        help="Judge the wave's items or not, of the loop on its first wave, judged by default, of this wave alone later",
     )
     init.set_defaults(func=cmd_init)
 

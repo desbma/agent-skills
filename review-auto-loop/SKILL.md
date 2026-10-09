@@ -1,7 +1,7 @@
 ---
 name: review-auto-loop
 description: Review Jujutsu revision changes with external reviewer agents, in waves of parallel per-domain review chains, driven by the user. Use only when the user asks for this loop by name, or gives the go for the next wave of a loop already underway; a request to review a revision, on its own, is not enough. Do NOT use to read, answer or apply a review that already exists and was written by something else; handle those directly, without this skill.
-argument-hint: "[JJ_REVISION] [domain=N ...] [judge]"
+argument-hint: "[JJ_REVISION] [domain=N ...] [judge=no]"
 ---
 
 # Review auto-loop
@@ -22,7 +22,7 @@ The `review` script settles the rest of a wave's configuration on its own: it re
 - `--repeat` opens a wave over the domains the loop already ran, on lower caps.
 - `--judge` runs a judge over the wave's items, `--no-judge` runs none.
 
-The judge is a separate agent, opted into with `judge` on the skill invocation and absent by default. Once every item of a wave is assessed, it reads them all at once and recommends an action on each; that recommendation becomes the item's default at step 5. `--judge` on the loop's first wave enables the judge for the whole loop, and every later wave inherits it with nothing to restate. On a later wave, `--judge` or `--no-judge` overrides that wave alone.
+The judge is a separate agent, on by default and disabled with `judge=no` on the skill invocation. Once every item of a wave is assessed, it reads them all at once and recommends an action on each; that recommendation becomes the item's default at step 5. The loop's first wave sets the judge for the whole loop, `--no-judge` there disabling it, and every later wave inherits that setting with nothing to restate. On a later wave, `--judge` or `--no-judge` overrides that wave alone.
 
 ## Chains
 

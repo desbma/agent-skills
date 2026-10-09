@@ -29,8 +29,8 @@ digraph review_workflow {
 
     // Judge
     node [style="rounded,filled,bold", fillcolor="#d9ead3"]
-    judge_a [group=a, label="review-judge\n(opt-in)"]
-    judge_b [group=b, label="review-judge\n(opt-in)"]
+    judge_a [group=a, label="review-judge"]
+    judge_b [group=b, label="review-judge"]
 
     // User
     node [shape=ellipse, style=filled, fillcolor=lightgrey]
