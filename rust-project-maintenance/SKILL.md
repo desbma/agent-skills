@@ -152,7 +152,7 @@ Steps :
   - do not make changes that affect the output (ie. compilation toolchains, library packages installed), as it is highly project specific
   - ignore the `untemplate` line noise, it is an artifact of the `cargo-generate` use
   - if a check is in the reference action, and not in the local one, or is more thorough in the reference (ie. runs Clippy on test code and the local project has tests) **and** it makes sense to use such command locally (for example it is not needed to run `cargo test --all-features` if local project has no features) => add it
-- run `pinact run -u -min-age 10` to update GitHub actions versions, and pin it with hashes
+- run `pinact run -u --min-age 10` to update GitHub actions versions, and pin it with hashes
 
 ### Changelog template update
 
