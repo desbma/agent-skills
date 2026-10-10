@@ -44,6 +44,15 @@ class Domain(enum.StrEnum):
         return self.name[0]
 
 
+@dataclasses.dataclass(frozen=True)
+class Reviewer:
+    """Codex model and effort level a domain's reviews run under, with the model's display name."""
+
+    model: str
+    effort: str
+    name: str
+
+
 PREFIX_TO_DOMAIN = {domain.prefix: domain for domain in Domain}
 PHASE_DOMAINS = {
     "A": (Domain.CORRECTNESS, Domain.READABILITY),
@@ -57,9 +66,12 @@ CAP_SCALES = collections.defaultdict(
 )
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent
-REVIEWER_MODEL = "gpt-6-astra"
-REVIEWER_EFFORT = "xhigh"
-REVIEWER_MODEL_NAME = "GPT 6 Astra xhigh"
+REVIEWERS = {
+    Domain.CORRECTNESS: Reviewer("gpt-6-astra", "xhigh", "GPT 6 Astra"),
+    Domain.READABILITY: Reviewer("gpt-5.6-sol", "xhigh", "GPT 5.6 Sol"),
+    Domain.TESTS: Reviewer("gpt-6-astra", "xhigh", "GPT 6 Astra"),
+    Domain.DOCS: Reviewer("gpt-6.1-sol", "high", "GPT 6.1 Sol"),
+}
 SUMMARY_MODEL = "gpt-6.1-sol"
 SUMMARY_EFFORT = "low"
 JUDGE_MODEL_NAME = "Fable 5.1 xhigh"
@@ -874,7 +886,11 @@ def render_markdown(
         "## Review status",
         "",
         f"- **Assessor model**: {metadata.assessor}",
-        f"- **Reviewer model**: {REVIEWER_MODEL_NAME}",
+        "- **Reviewer models**:",
+        *(
+            f"  - {domain}: {REVIEWERS[domain].name} {REVIEWERS[domain].effort}"
+            for domain in metadata.active
+        ),
         *([f"- **Judge model**: {JUDGE_MODEL_NAME}"] if metadata.judge else []),
         f"- **Config**: {config_text(metadata.domain_caps)}",
         f"- **Review count**: {state.total} total",
@@ -1134,10 +1150,11 @@ def cmd_chain_run(args: argparse.Namespace) -> None:
         raise SystemExit(f"Chain {args.domain} still has a run in flight")
     if ended := chain_end_reason(counts, cap):
         raise SystemExit(f"Chain {args.domain} has ended: {ended}")
+    reviewer = REVIEWERS[args.domain]
     capture = run_agent(
         agent_argv(
-            REVIEWER_MODEL,
-            REVIEWER_EFFORT,
+            reviewer.model,
+            reviewer.effort,
             f"review-{args.domain}",
             reviewer_arguments(metadata.change_id, chain),
         ),

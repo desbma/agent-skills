@@ -88,6 +88,10 @@ SECOND_FINDING = (
     "**Issue**:\n\nNothing reaches it.\n\n**Proposed change**:\n\nDelete it.\n\n"
     "**Estimated delta**: -1 lines\n"
 )
+DISTINCT_REVIEWERS = {
+    domain: review.Reviewer(f"model-{domain}", f"effort-{domain}", f"Model {domain}")
+    for domain in review.Domain
+}
 
 
 class RawReviewTest(unittest.TestCase):
@@ -480,6 +484,14 @@ class LetteredOptionsTest(unittest.TestCase):
     def test_an_option_past_the_alphabet_is_refused(self) -> None:
         """Fail on an option the alphabet cannot letter, instead of lettering it outside it."""
         self.assertRaises(IndexError, self.lettered, 27)
+
+
+def reviewer_lines(*domains: str) -> str:
+    """Render the status list entry naming the reviewer of each given domain."""
+    return "- **Reviewer models**:\n" + "".join(
+        f"  - {domain}: {review.REVIEWERS[domain].name} {review.REVIEWERS[domain].effort}\n"
+        for domain in domains
+    )
 
 
 def patch_agent(
@@ -1352,26 +1364,28 @@ class WaveTest(WaveFixture):
             "2 items · 2 apply\n\n- apply: C1, C2\n",
         )
 
+    @mock.patch.dict(review.REVIEWERS, DISTINCT_REVIEWERS)
     def test_format_names_the_models(self) -> None:
-        """Open the status list with the assessing model, then the reviewing one."""
+        """Open the status list with the assessing model, then the reviewing one of each domain."""
         self.ready()
         self.run_cli("report", "format", self.report)
         self.assertIn(
             f"## Review status\n\n- **Assessor model**: {ASSESSOR}\n"
-            f"- **Reviewer model**: {review.REVIEWER_MODEL_NAME}\n",
+            + reviewer_lines("correctness", "readability"),
             self.report.read_text(),
         )
 
-    def test_an_excluded_domain_is_not_awaited(self) -> None:
-        """Formatting waits only on the chains of the domains the caps left active."""
+    def test_an_excluded_domain_is_left_out(self) -> None:
+        """Formatting waits only on the chains of the domains the caps left active, and names only their reviewers."""
         review_dir = Path(self.review_dir, "excluded")
         review_dir.mkdir()
-        report = self.init(review_dir, "B", "--cap", "docs=0")
+        report = self.init(review_dir, "B", "--cap", "docs=0", "--no-judge")
         Path(review_dir, f"{REV}-wave1-tests", "run1.md").write_text("Nothing yet.\n")
         self.write_summary(report)
         self.assertEqual(self.run_cli("report", "format", report), "")
         self.assertIn(
-            "- **Config**: tests ≤1 · docs =0", report.read_text().splitlines()
+            reviewer_lines("tests") + "- **Config**: tests ≤1 · docs =0\n",
+            report.read_text(),
         )
 
     def test_format_runs_again_over_its_own_output(self) -> None:
@@ -2008,8 +2022,8 @@ class JudgeReportTest(JudgedFixture):
         self.judge("C1", "C2")
         self.run_cli("report", "format", self.report)
         self.assertIn(
-            f"- **Reviewer model**: {review.REVIEWER_MODEL_NAME}\n"
-            f"- **Judge model**: {review.JUDGE_MODEL_NAME}\n",
+            reviewer_lines("correctness", "readability")
+            + f"- **Judge model**: {review.JUDGE_MODEL_NAME}\n",
             self.report.read_text(),
         )
 
@@ -2232,13 +2246,14 @@ class ChainRunTest(WaveFixture):
             self.run_chain("readability")
             self.assertEqual(os.environ["HAX_NO_SKILLS"], "0")
         argv = self.spawn.call_args.args[0]
+        reviewer = review.REVIEWERS[review.Domain.READABILITY]
         self.assertEqual(
             argv[:-1],
             [
                 "hax",
                 "--provider=codex",
-                f"--model={review.REVIEWER_MODEL}",
-                f"--effort={review.REVIEWER_EFFORT}",
+                f"--model={reviewer.model}",
+                f"--effort={reviewer.effort}",
                 "-p",
             ],
         )
@@ -2254,12 +2269,13 @@ class ChainRunTest(WaveFixture):
         """Fall back on a pi reviewer under the skill only when hax is not on PATH."""
         self.run_chain("readability", hax=False)
         argv = self.spawn.call_args.args[0]
+        reviewer = review.REVIEWERS[review.Domain.READABILITY]
         self.assertEqual(
             argv[:-1],
             [
                 "pi",
                 "--model",
-                f"openai-codex/{review.REVIEWER_MODEL}:{review.REVIEWER_EFFORT}",
+                f"openai-codex/{reviewer.model}:{reviewer.effort}",
                 "--no-skills",
                 "--skill",
                 str(review.SKILLS_DIR / "review-readability"),
@@ -2268,6 +2284,20 @@ class ChainRunTest(WaveFixture):
         )
         self.assertTrue(argv[-1].startswith(f"/skill:review-readability {CHANGE_ID}"))
         self.assertIn(str(self.chain("readability")), argv[-1])
+
+    @mock.patch.dict(review.REVIEWERS, DISTINCT_REVIEWERS)
+    def test_each_chain_runs_its_domain_reviewer(self) -> None:
+        """Run every chain under the model and effort level of its own domain's reviewer."""
+        for domain in (review.Domain.CORRECTNESS, review.Domain.READABILITY):
+            with self.subTest(domain=domain):
+                self.run_chain(domain)
+                self.assertEqual(
+                    self.spawn.call_args.args[0][2:4],
+                    [
+                        f"--model={review.REVIEWERS[domain].model}",
+                        f"--effort={review.REVIEWERS[domain].effort}",
+                    ],
+                )
 
     def test_the_prompt_names_the_chain_dir_absolutely(self) -> None:
         """Expand a relative report to an absolute chain dir, for the reviewer at the repository root."""

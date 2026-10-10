@@ -15,8 +15,7 @@ Personal [coding agent skills](https://agentskills.io/).
 ## General
 
 - Skills are agent-agnostic.
-- Some skills start `hax` agent subprocesses for reviews, or `pi` ones when `hax` is not installed, and a `claude` one for the judge, regardless of the main agent.
-- Some skills hardcode the model used for reviews. I had the best results with OpenAI's GPT.
+- Some skills start agent subprocesses with specific harnesses and models, regardless of the main agent: see [Review agents](#review-agents).
 
 ## Content
 
@@ -45,6 +44,19 @@ Once the main agent has assessed every item of a wave, `review-judge`, unless di
 The user keeps the final say: the recommendation is only each item's default, and they pick item by item. The main agent applies the picks, the user squashes them, then chooses to repeat the wave's domains or move to the other phase. Every default can be overridden along the way: the domains a wave runs, the cap of each chain, and whether a wave is judged at all.
 
 ![Review workflow](docs/review-auto-loop.svg)
+
+### Review agents
+
+`review-auto-loop` runs these skills as agent subprocesses:
+
+| Skill | Model | Effort | Harness |
+| --- | --- | --- | --- |
+| `review-correctness` | GPT 6 Astra | xhigh | `hax` / `pi` |
+| `review-readability` | GPT 5.6 Sol | xhigh | `hax` / `pi` |
+| `review-tests` | GPT 6 Astra | xhigh | `hax` / `pi` |
+| `review-docs` | GPT 6.1 Sol | high | `hax` / `pi` |
+| `summarize-change` | GPT 6.1 Sol | low | `hax` / `pi` |
+| `review-judge` | Claude Fable 5.1 | xhigh | `claude` |
 
 ## License
 
