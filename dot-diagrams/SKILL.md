@@ -1,6 +1,6 @@
 ---
 name: dot-diagrams
-description: Conventions to draw diagrams as Graphviz .dot files rendered to SVG. Use when the user asks for a diagram, schema or sketch of an architecture, workflow or data flow, or when creating or editing a .dot file.
+description: Conventions for Graphviz .dot diagrams and their SVG renders. Load before creating or changing any .dot file, however small the change and even in passing during an unrelated task, and when the user asks for a diagram, schema or sketch of an architecture, workflow or data flow.
 ---
 
 # Dot diagrams
