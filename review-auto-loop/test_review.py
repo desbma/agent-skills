@@ -2286,6 +2286,14 @@ class ChainRunTest(WaveFixture):
             self.run_cli("chain", "run", self.report.name, "correctness")
         self.assertIn(str(self.chain("correctness")), spawn.call_args.args[0][-1])
 
+    def test_the_prompt_disowns_the_in_flight_capture(self) -> None:
+        """Tell the reviewer the chain dir's in-flight capture is its own output, not a previous review."""
+        self.run_chain("correctness")
+        self.assertIn(
+            f"*{review.RUNNING_SUFFIX} file is this very review's output",
+            self.spawn.call_args.args[0][-1],
+        )
+
     def test_a_marker_created_after_the_scan_stops_the_run(self) -> None:
         """Keep two runs racing past the in-flight check from sharing one capture."""
         marker = self.running("correctness", 1)

@@ -1109,7 +1109,9 @@ def reviewer_arguments(revision: str, chain: Path) -> str:
     return (
         f"{revision}. In addition to the previous reviews you "
         f"find as usual, the directory {chain} also holds previous reviews of the same "
-        "revision. Read its *.md files too, and do not raise their items again."
+        "revision. Read its *.md files too, and do not raise their items again. "
+        f"Its *{RUNNING_SUFFIX} file is this very review's output in progress: "
+        "ignore it."
     )
 
 
