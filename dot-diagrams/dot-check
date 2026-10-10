@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""Check the layout of a Graphviz diagram for detached arrows, overlaps and crossings."""
+
+import argparse
+import itertools
+import json
+import math
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+type Point = tuple[float, float]
+type Segment = tuple[Point, Point]
+type Polyline = list[Point]
+# Left, bottom, right, top
+type Rect = tuple[float, float, float, float]
+
+# Largest gap between an arrow end and its node's outline still drawn as touching, in points
+ATTACH_TOLERANCE = 1.5
+# Distance from an arrow end within which another arrow meets it rather than crosses it, in points
+END_TOLERANCE = 2.0
+# Clearance around a text line, in points
+LABEL_MARGIN = 1.0
+# Text extent below and above its baseline, as fractions of the font size
+TEXT_DESCENT = 0.2
+TEXT_ASCENT = 0.7
+# Points sampled per Bézier segment and per ellipse
+BEZIER_STEPS = 16
+ELLIPSE_STEPS = 64
+
+
+@dataclass
+class Report:
+    """Layout problems and size of a rendered diagram."""
+
+    defects: list[str]
+    crossings: list[str]
+    size: tuple[float, float]
+
+
+@dataclass
+class Shape:
+    """Drawn element, as the lines tracing it."""
+
+    name: str
+    lines: list[Polyline]
+
+
+@dataclass
+class Edge:
+    """Drawn arrow."""
+
+    name: str
+    tail: int
+    head: int
+    lines: list[Polyline]
+    arrowheads: list[Polyline]
+    # Shapes the ends attach to, the nodes or the frames given by ltail and lhead
+    tail_outline: Shape | None
+    head_outline: Shape | None
+    # Points that must touch the tail and head outlines: the arrowhead tips, or the line ends
+    tail_end: Point
+    head_end: Point
+
+
+@dataclass
+class Label:
+    """Drawn text line."""
+
+    name: str
+    rect: Rect
+    # Node drawn as this text alone, whose arrows end against it
+    node: int | None = None
+
+
+def bezier(points: list[Point]) -> Polyline:
+    """Sample a piecewise cubic Bézier curve given by its control points."""
+    sampled = [points[0]]
+    for i in range(0, len(points) - 3, 3):
+        xs, ys = zip(*points[i : i + 4])
+        for step in range(1, BEZIER_STEPS + 1):
+            t = step / BEZIER_STEPS
+            weights = ((1 - t) ** 3, 3 * (1 - t) ** 2 * t, 3 * (1 - t) * t**2, t**3)
+            sampled.append((math.sumprod(weights, xs), math.sumprod(weights, ys)))
+    return sampled
+
+
+def trace(ops: list[dict[str, Any]]) -> list[Polyline]:
+    """Return the lines drawn by xdot operations, closed shapes closed."""
+    lines = []
+    for op in ops:
+        match op["op"]:
+            case "p" | "P":
+                points = [(x, y) for x, y in op["points"]]
+                lines.append(points + points[:1])
+            case "L":
+                lines.append([(x, y) for x, y in op["points"]])
+            case "b" | "B":
+                lines.append(bezier([(x, y) for x, y in op["points"]]))
+            case "e" | "E":
+                x, y, rx, ry = op["rect"]
+                points = [
+                    (
+                        x + rx * math.cos(2 * math.pi * i / ELLIPSE_STEPS),
+                        y + ry * math.sin(2 * math.pi * i / ELLIPSE_STEPS),
+                    )
+                    for i in range(ELLIPSE_STEPS)
+                ]
+                lines.append(points + points[:1])
+    return lines
+
+
+def texts(ops: list[dict[str, Any]]) -> list[tuple[str, Rect]]:
+    """Return the text lines drawn by xdot operations, with their extent."""
+    result: list[tuple[str, Rect]] = []
+    size = 0.0
+    color = ""
+    for op in ops:
+        if op["op"] == "F":
+            size = op["size"]
+        elif op["op"] == "c":
+            color = op["color"]
+        elif op["op"] == "T" and not transparent(color):
+            (x, y), width = op["pt"], op["width"]
+            left = {"l": x, "c": x - width / 2, "r": x - width}[op["align"]]
+            text = op["text"]
+            rect = (left, y - TEXT_DESCENT * size, left + width, y + TEXT_ASCENT * size)
+            # Differently formatted runs of a line are drawn one after the other
+            if result and overlap(result[-1][1], rect):
+                previous, extent = result.pop()
+                text = previous + text
+                rect = (
+                    min(extent[0], rect[0]),
+                    min(extent[1], rect[1]),
+                    max(extent[2], rect[2]),
+                    max(extent[3], rect[3]),
+                )
+            result.append((text, rect))
+    return result
+
+
+def transparent(color: str) -> bool:
+    """Tell whether a color is fully transparent."""
+    return color == "transparent" or (len(color) == 9 and color.endswith("00"))
+
+
+def visible(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return xdot operations, or none when all their colors are fully transparent."""
+    colors = [
+        stop["color"]
+        for op in ops
+        if op["op"] in "cC"
+        for stop in (op["stops"] if op["grad"] != "none" else [op])
+    ]
+    return [] if colors and all(map(transparent, colors)) else ops
+
+
+def segments(lines: list[Polyline]) -> list[Segment]:
+    """Return the segments of polylines."""
+    return [segment for line in lines for segment in itertools.pairwise(line)]
+
+
+def intersection(s: Segment, t: Segment) -> Point | None:
+    """Return the point where two segments cross, if they do."""
+    (px, py), (px2, py2) = s
+    (qx, qy), (qx2, qy2) = t
+    dx, dy = px2 - px, py2 - py
+    ex, ey = qx2 - qx, qy2 - qy
+    denominator = dx * ey - dy * ex
+    if denominator == 0:
+        return None
+    a = ((qx - px) * ey - (qy - py) * ex) / denominator
+    b = ((qx - px) * dy - (qy - py) * dx) / denominator
+    if 0 <= a <= 1 and 0 <= b <= 1:
+        return (px + a * dx, py + a * dy)
+    return None
+
+
+def crossings(a: list[Polyline], b: list[Polyline]) -> list[Point]:
+    """Return the points where two sets of polylines cross."""
+    return [
+        point
+        for s, t in itertools.product(segments(a), segments(b))
+        if (point := intersection(s, t)) is not None
+    ]
+
+
+def point_distance(point: Point, segment: Segment) -> float:
+    """Return the distance from a point to a segment."""
+    (ax, ay), (bx, by) = segment
+    dx, dy = bx - ax, by - ay
+    length = dx * dx + dy * dy
+    t = 0 if length == 0 else ((point[0] - ax) * dx + (point[1] - ay) * dy) / length
+    t = min(max(t, 0), 1)
+    return math.dist(point, (ax + t * dx, ay + t * dy))
+
+
+def inside(point: Point, lines: list[Polyline]) -> bool:
+    """Tell whether a point lies inside one of closed polylines."""
+    x, y = point
+    for line in lines:
+        if line[0] != line[-1]:
+            continue
+        crossed = False
+        for (ax, ay), (bx, by) in itertools.pairwise(line):
+            if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
+                crossed = not crossed
+        if crossed:
+            return True
+    return False
+
+
+def center(rect: Rect) -> Point:
+    """Return the center of a rectangle."""
+    return (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
+
+
+def touches(rect: Rect, lines: list[Polyline]) -> bool:
+    """Tell whether polylines enter a rectangle widened by the label margin."""
+    left, bottom, right, top = (
+        rect[0] - LABEL_MARGIN,
+        rect[1] - LABEL_MARGIN,
+        rect[2] + LABEL_MARGIN,
+        rect[3] + LABEL_MARGIN,
+    )
+    if any(
+        left <= x <= right and bottom <= y <= top for line in lines for x, y in line
+    ):
+        return True
+    corners = [(left, bottom), (right, bottom), (right, top), (left, top)]
+    return bool(crossings(lines, [corners + corners[:1]]))
+
+
+def overlap(a: Rect, b: Rect) -> bool:
+    """Tell whether two rectangles come closer than the label margin."""
+    return (
+        a[0] - LABEL_MARGIN < b[2]
+        and b[0] - LABEL_MARGIN < a[2]
+        and a[1] - LABEL_MARGIN < b[3]
+        and b[1] - LABEL_MARGIN < a[3]
+    )
+
+
+def render(path: Path) -> dict[str, Any]:
+    """Lay out a .dot file and return Graphviz's JSON description of the drawing."""
+    result = subprocess.run(
+        ["dot", "-Tjson", str(path)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=None,
+        check=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
+def check(graph: dict[str, Any]) -> Report:
+    """Find detached arrows, arrows through boxes, overlapping labels and crossings in a laid out graph."""
+    objects = graph.get("objects", [])
+    nodes = {}
+    frames = {}
+    labels = []
+    for i, o in enumerate(objects):
+        if "nodes" not in o:
+            lines = trace(visible(o.get("_draw_", [])) + o.get("_ldraw_", []))
+            # Nodes drawing no line, like invisible ones or bare text, have none to attach to
+            if lines:
+                nodes[i] = Shape(o["name"], lines)
+            # Text within its node's outline is checked with the outline
+            labels.extend(
+                Label(f'label "{text}" of {o["name"]}', rect, None if lines else i)
+                for text, rect in texts(o.get("_ldraw_", []))
+                if not lines or not inside(center(rect), lines)
+            )
+        else:
+            if "_draw_" in o:
+                name = (
+                    f'frame "{o["label"]}"' if o.get("label") else f"frame {o['name']}"
+                )
+                frames[o["name"]] = Shape(name, trace(o["_draw_"]))
+            labels.extend(
+                Label(f'title "{text}"', rect)
+                for text, rect in texts(o.get("_ldraw_", []))
+            )
+    arrow = "->" if graph["directed"] else "--"
+    edges = []
+    for e in sorted(graph.get("edges", []), key=lambda e: e["_gvid"]):
+        name = f"{objects[e['tail']]['name']} {arrow} {objects[e['head']]['name']}"
+        for key in ("_ldraw_", "_hldraw_", "_tldraw_"):
+            labels.extend(
+                Label(f'label "{text}" of {name}', rect)
+                for text, rect in texts(e.get(key, []))
+            )
+        lines = trace([op for op in visible(e.get("_draw_", [])) if op["op"] in "bB"])
+        if not lines:
+            continue
+        # The edge's spline: its arrowhead tips, s at the tail and e at the head, then its points
+        tokens = [token.split(",") for token in e["pos"].replace(";", " ").split()]
+        tips = {t[0]: (float(t[1]), float(t[2])) for t in tokens if len(t) == 3}
+        spline = [(float(t[0]), float(t[1])) for t in tokens if len(t) == 2]
+        edges.append(
+            Edge(
+                name=name,
+                tail=e["tail"],
+                head=e["head"],
+                lines=lines,
+                arrowheads=trace(e.get("_tdraw_", []) + e.get("_hdraw_", [])),
+                tail_outline=frames.get(e.get("ltail")) or nodes.get(e["tail"]),
+                head_outline=frames.get(e.get("lhead")) or nodes.get(e["head"]),
+                tail_end=tips.get("s", spline[0]),
+                head_end=tips.get("e", spline[-1]),
+            )
+        )
+
+    defects = []
+    for edge in edges:
+        for end, outline, point in (
+            ("tail", edge.tail_outline, edge.tail_end),
+            ("head", edge.head_outline, edge.head_end),
+        ):
+            if not outline:
+                continue
+            off = min(point_distance(point, s) for s in segments(outline.lines))
+            if off > ATTACH_TOLERANCE:
+                defects.append(
+                    f"{edge.name}: {end} {off:.1f}pt off the outline of {outline.name}"
+                )
+        for i, node in nodes.items():
+            if i not in (edge.tail, edge.head) and crossings(
+                edge.lines + edge.arrowheads, node.lines
+            ):
+                defects.append(f"{edge.name}: passes through {node.name}")
+    for i, label in enumerate(labels):
+        for edge in edges:
+            if label.node not in (edge.tail, edge.head) and touches(
+                label.rect, edge.lines + edge.arrowheads
+            ):
+                defects.append(f"{label.name}: touches {edge.name}")
+        for node in nodes.values():
+            if touches(label.rect, node.lines) or inside(
+                center(label.rect), node.lines
+            ):
+                defects.append(f"{label.name}: touches {node.name}")
+        for other in labels[i + 1 :]:
+            if overlap(label.rect, other.rect):
+                defects.append(f"{label.name}: touches {other.name}")
+        for frame in frames.values():
+            if touches(label.rect, frame.lines):
+                defects.append(f"{label.name}: touches {frame.name}")
+
+    crossed = []
+    for a, b in itertools.combinations(edges, 2):
+        ends = [a.tail_end, a.head_end, b.tail_end, b.head_end]
+        if any(
+            min(math.dist(point, end) for end in ends) > END_TOLERANCE
+            for point in crossings(a.lines, b.lines)
+        ):
+            crossed.append(f"{a.name} crosses {b.name}")
+
+    left, bottom, right, top = map(float, graph["bb"].split(","))
+    return Report(defects, crossed, (right - left, top - bottom))
+
+
+def main() -> None:
+    """Check the .dot file given on the command line, print the problems and size, and fail on defects."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("file", type=Path, help="Graphviz .dot file")
+    args = parser.parse_args()
+    report = check(render(args.file))
+    for defect in report.defects:
+        print(f"Defect: {defect}")
+    for crossing in report.crossings:
+        print(f"Crossing: {crossing}")
+    defects, crossed = len(report.defects), len(report.crossings)
+    print(
+        f"Size: {report.size[0]:g} × {report.size[1]:g}pt, "
+        f"{defects} defect{'s' * (defects != 1)}, {crossed} crossing{'s' * (crossed != 1)}"
+    )
+    if report.defects:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
