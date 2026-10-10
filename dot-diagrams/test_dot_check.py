@@ -7,16 +7,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from importlib.machinery import SourceFileLoader
+from importlib.machinery import ModuleSpec, SourceFileLoader
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("dot-check")
-_spec = importlib.util.spec_from_loader(
-    "dot_check", SourceFileLoader("dot_check", str(SCRIPT))
-)
-assert _spec is not None and _spec.loader is not None
-dot_check = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(dot_check)
+_loader = SourceFileLoader("dot_check", str(SCRIPT))
+dot_check = importlib.util.module_from_spec(ModuleSpec("dot_check", _loader))
+_loader.exec_module(dot_check)
 
 # Pinned layout, positions in points
 HEADER = "layout=neato; inputscale=72; splines=line; node [shape=box];"
