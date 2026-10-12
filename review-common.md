@@ -42,7 +42,7 @@ Leave the working tree as you found it: keep the artifacts the repository ignore
 
 ## Output
 
-Write the review to stdout only.
+Your final message is the review and nothing else, with no preamble and no recap.
 
 Report at most about 10 items. Report fewer, or none at all, if that is all the review yields, but within that limit do not hold back an item you believe in.
 

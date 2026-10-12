@@ -40,7 +40,7 @@ Describe the change from the diff. The revision description says what its author
 
 ## Output
 
-Write the summary to stdout only.
+Your final message is the summary and nothing else, with no preamble and no recap.
 
 One or more paragraphs, and nothing else: no heading, no list, no code block, no blockquote, no table. A code span naming a symbol the change touches is fine.
 

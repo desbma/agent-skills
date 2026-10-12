@@ -66,7 +66,7 @@ A pick among offered options is justified too, but it may be a single sentence: 
 
 ## Output
 
-Write the recommendations to stdout only.
+Your final message is the judgment and nothing else: it opens on the first block's label and ends with the last block, with no preamble and no recap.
 
 One block per item, opening with the item's id as a bold label, and running to the next such line:
 
