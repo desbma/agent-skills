@@ -328,11 +328,6 @@ def wave_domains(value: str) -> tuple[Domain, ...]:
     return domains
 
 
-def repeated_caps(loop_caps: dict[Domain, int]) -> dict[Domain, int]:
-    """Lower the loop caps for a repeated wave, never disabling a domain the loop runs."""
-    return {domain: max(cap - 1, 1) if cap else 0 for domain, cap in loop_caps.items()}
-
-
 def parse_caps(pairs: list[str]) -> dict[Domain, int]:
     """Read per-domain caps from their domain=N arguments."""
     caps: dict[Domain, int] = {}
@@ -956,11 +951,17 @@ def write_lines(report: Path, lines: list[str]) -> None:
 
 
 def wave_caps(
-    args: argparse.Namespace, loop_caps: dict[Domain, int]
+    args: argparse.Namespace, loop_caps: dict[Domain, int], ran: set[Domain]
 ) -> dict[Domain, int]:
-    """Read the caps of the wave's domains off the loop caps, lowered when it repeats them."""
-    caps = repeated_caps(loop_caps) if args.repeat else dict(loop_caps)
-    caps.update(parse_caps(args.cap))
+    """Read the caps of the wave's domains off the loop caps, lowered by one but never to zero on the domains an earlier wave ran."""
+    overrides = parse_caps(args.cap)
+    outside = [domain for domain in overrides if domain not in args.domains]
+    if outside:
+        raise SystemExit(f"Cap on a domain the wave does not run: {', '.join(outside)}")
+    caps = {
+        domain: max(cap - 1, 1) if cap and domain in ran else cap
+        for domain, cap in loop_caps.items()
+    } | overrides
     return parse_domain_caps([f"{domain}={caps[domain]}" for domain in args.domains])
 
 
@@ -984,16 +985,23 @@ def cmd_init(args: argparse.Namespace) -> None:
         loop_caps.update(parse_caps(args.cap))
         loop_judge = args.judge is not False
     else:
-        if args.domains is None:
-            raise SystemExit("A later wave names its phase or its domains")
+        if args.domains is None and not args.repeat:
+            raise SystemExit(
+                "A later wave names its phase or its domains, or repeats the previous one"
+            )
         previous = read_metadata(reports[wave - 1])
         if not report_is_formatted(read_lines(previous.report)):
             raise SystemExit(f"Wave {wave - 1} is not formatted yet")
         decided_counts(previous.report)
+        if args.repeat:
+            args.domains = previous.active
         loop_caps = previous.loop_caps
         loop_judge = previous.loop_judge
     judge = loop_judge if args.judge is None else args.judge
-    domain_caps = wave_caps(args, loop_caps)
+    ran = {
+        domain for report in reports.values() for domain in read_metadata(report).active
+    }
+    domain_caps = wave_caps(args, loop_caps, ran)
     chains = {
         domain: review_dir / f"{short_change_id}-wave{wave}-{domain}"
         for domain, cap in domain_caps.items()
@@ -1770,7 +1778,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     init = commands.add_parser("init", help="Create the wave report and its chain dirs")
     init.add_argument("review_dir", help="Directory holding the review files")
-    init.add_argument(
+    domains_or_repeat = init.add_mutually_exclusive_group()
+    domains_or_repeat.add_argument(
         "domains",
         nargs="?",
         type=wave_domains,
@@ -1796,10 +1805,10 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DOMAIN=CAP",
         help="Override a cap, of the loop on its first wave, of this wave alone later",
     )
-    init.add_argument(
+    domains_or_repeat.add_argument(
         "--repeat",
         action="store_true",
-        help="Repeat the domains already run, lowering the loop caps by one",
+        help="Run the domains of the previous wave again",
     )
     init.add_argument(
         "--judge",

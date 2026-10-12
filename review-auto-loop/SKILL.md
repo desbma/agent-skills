@@ -14,12 +14,19 @@ Each domain maps to an item id prefix: `correctness` → `C`, `readability` → 
 
 By default, a wave runs two domains in parallel: phase A waves run correctness and readability, phase B waves run tests and docs. The split keeps the domains that change production code apart from those that follow it. The loop's first wave runs phase A, or all four domains at once on a revision small enough that every chain is capped at one run: there, the split would cost a whole wave round to protect very little code. The loop then moves between phases as the user decides at the end of each wave.
 
-A wave can also run domains the phases keep apart. `review init` takes a comma separated domain list in place of the phase letter, and the wave then runs exactly the domains it names. `<domain>=<N>` arguments still set caps; when the domains they name do not fit one phase — `readability=1 tests=1` — they name the wave's domains too. A wave whose domains would fit one phase is asked for in words: "only readability this wave". Compose a wave by hand only on the user's request: one crossing the split reviews tests and docs against code its own correctness items may still change.
+A wave can also run any set of domains: `review init` takes a comma separated domain list in place of the phase letter, and the wave then runs exactly the domains it names. Read the user's request for a wave this way:
 
-The `review` script settles the rest of a wave's configuration on its own: it resolves the revision, numbers the wave, and caps every chain — the code domains from the number of lines the revision adds, tests and docs at one run. Three flags of `review init` carry what the user asked for, in the wording of their request:
+- A phase they name brings its two domains. A `<domain>=<N>` on one of them overrides its cap; one on a domain outside the phase contradicts the phase: point that out and open nothing.
+- Domains they name without a phase, with or without `=<N>`, are the wave's domains, and no other runs: `correctness=1` is a correctness-only wave.
+- "Repeat" runs the previous wave's domains again.
+- On a later wave, a request naming none of these — "another pass" — is ambiguous: ask which domains to run.
+
+Compose a wave by hand only on the user's request: one crossing the split reviews tests and docs against code its own correctness items may still change.
+
+The `review` script settles the rest of a wave's configuration on its own: it resolves the revision, numbers the wave, and caps every chain — the code domains from the number of lines the revision adds, tests and docs at one run, one run fewer, never below one, on a domain an earlier wave already ran. Three flags of `review init` carry what the user asked for, in the wording of their request:
 
 - `--cap <domain>=<N>` overrides a cap: on the loop's first wave for the whole loop, on a later wave for that wave alone. A cap of `0` excludes the domain; a wave left with no domain is not opened.
-- `--repeat` opens a wave over the domains the loop already ran, on lower caps.
+- `--repeat` opens a wave over the previous wave's domains, and takes no phase or domain list.
 - `--judge` runs a judge over the wave's items, `--no-judge` runs none.
 
 The judge is a separate agent, on by default and disabled with `judge=no` on the skill invocation. Once every item of a wave is assessed, it reads them all at once and recommends an action on each; that recommendation becomes the item's default at step 5. The loop's first wave sets the judge for the whole loop, `--no-judge` there disabling it, and every later wave inherits that setting with nothing to restate. On a later wave, `--judge` or `--no-judge` overrides that wave alone.
@@ -63,10 +70,10 @@ The decision is added once the user has picked, exactly one per item, its reason
 
 ## Wave round
 
-1. Create the wave, naming its phase or its domains:
+1. Create the wave, naming its phase or its domains, or repeating the previous one:
 
    ```bash
-   <SKILL_DIR>/review init <REVIEW_DIR> [<PHASE|DOMAIN,...>] --assessor <MODEL> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--repeat] [--judge | --no-judge]
+   <SKILL_DIR>/review init <REVIEW_DIR> [<PHASE|DOMAIN,...> | --repeat] --assessor <MODEL> [--revision <JJ_REVISION>] [--cap <domain>=<N> ...] [--judge | --no-judge]
    ```
 
    `--assessor` takes your own model under the display name your system prompt gives it, followed by your effort level, never an identifier like `claude-opus-5:xhigh`. The effort level lives in your environment, so let the shell expand it in place: `--assessor "Opus 5 $CLAUDE_EFFORT"` under Claude Code, `--assessor "GPT 6 Astra $HAX_EFFORT"` under hax, `--assessor "GPT 5.6 Sol $PI_REASONING_LEVEL"` under pi. A harness exposing no effort level leaves the model named alone.

@@ -440,13 +440,15 @@ class LoopCapsTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.caps("M review-auto-loop/review")
 
-    def test_a_repeat_lowers_the_caps_without_disabling_a_domain(self) -> None:
-        """Repeating drops each cap by one, floored at one, an excluded domain staying out."""
+    def test_a_domain_run_before_gets_a_lower_cap(self) -> None:
+        """Drop the cap of each domain already run by one, floored at one, an excluded domain staying out."""
         self.assertEqual(
-            review.repeated_caps(
-                {"correctness": 3, "readability": 1, "tests": 1, "docs": 0}
+            review.wave_caps(
+                argparse.Namespace(cap=[], domains=tuple(review.Domain)),
+                {"correctness": 3, "readability": 1, "tests": 2, "docs": 0},
+                {"correctness", "readability", "docs"},
             ),
-            {"correctness": 2, "readability": 1, "tests": 1, "docs": 0},
+            {"correctness": 2, "readability": 1, "tests": 2, "docs": 0},
         )
 
 
@@ -669,12 +671,23 @@ class WaveFixture(CliFixture):
         third = self.init(self.review_dir, "A", *flags)
         chain = Path(self.review_dir, f"{REV}-wave3-correctness")
         Path(chain, "run1.md").write_text(CAPTURE)
-        Path(chain, "run2.md").write_text("Nothing.\n")
         Path(self.review_dir, f"{REV}-wave3-readability", "run1.md").write_text(
             "Nothing.\n"
         )
         self.write_summary(third)
         return third
+
+    def formatted_empty_wave(self, review_dir: Path, *argv: str) -> None:
+        """Open a wave and format it, every chain of it ending on a run finding no item."""
+        out = self.run_init(review_dir, *argv).splitlines()
+        report = Path(out[1])
+        wave = review.read_metadata(report).wave
+        for domain in out[2:]:
+            Path(review_dir, f"{REV}-wave{wave}-{domain}", "run1.md").write_text(
+                "Nothing.\n"
+            )
+        self.write_summary(report)
+        self.run_cli("report", "format", report)
 
     def imported(
         self, domain: str, run: int = 1, report: Path | None = None
@@ -797,20 +810,63 @@ class WaveTest(WaveFixture):
         with self.assertRaisesRegex(SystemExit, "Item C1 .* has no decision"):
             self.init(self.review_dir, "B")
 
-    def test_init_repeats_a_phase_with_lower_caps(self) -> None:
-        """Run a repeated phase on the loop caps lowered by one, the loop caps standing."""
+    def test_init_lowers_the_caps_of_a_returning_phase(self) -> None:
+        """Run a phase an earlier wave ran on the loop caps lowered by one, the loop caps standing."""
         self.decided_second_wave()
-        third = review.read_metadata(self.init(self.review_dir, "A", "--repeat"))
+        third = review.read_metadata(self.init(self.review_dir, "A"))
         self.assertEqual(third.domain_caps, {"correctness": 1, "readability": 1})
         self.assertEqual(third.loop_caps["correctness"], 2)
 
+    def test_init_repeats_the_previous_wave(self) -> None:
+        """Repeat the domains the previous wave ran, on the lowered loop caps rather than its own."""
+        self.decided_second_wave()
+        self.formatted_empty_wave(
+            self.review_dir,
+            "readability,tests,docs",
+            "--cap",
+            "readability=4",
+            "--cap",
+            "docs=0",
+        )
+        out = self.run_init(self.review_dir, "--repeat").splitlines()
+        self.assertEqual(out[2:], ["readability", "tests"])
+        self.assertEqual(
+            review.read_metadata(Path(out[1])).domain_caps,
+            {"readability": 1, "tests": 1},
+        )
+
+    def test_init_keeps_the_cap_of_a_domain_yet_to_run(self) -> None:
+        """Keep the full cap of a domain no earlier wave ran, a wave excluding it not counting as running it."""
+        review_dir = Path(self.review_dir, "yet-to-run")
+        review_dir.mkdir()
+        self.jj["diff_summary"].return_value = "2 files changed, 100 insertions(+)"
+        self.formatted_empty_wave(review_dir, "correctness")
+        self.formatted_empty_wave(review_dir, "A", "--cap", "readability=0")
+        third = Path(self.run_init(review_dir, "A").splitlines()[1])
+        self.assertEqual(
+            review.read_metadata(third).domain_caps,
+            {"correctness": 1, "readability": 2},
+        )
+
+    def test_init_refuses_a_repeat_naming_its_domains(self) -> None:
+        """Refuse a repeated wave that also names a phase or domains."""
+        self.decided_second_wave()
+        self.assert_cli_error(
+            "init", self.review_dir, "A", "--repeat", "--assessor", ASSESSOR
+        )
+
     def test_init_refuses_a_first_repeat(self) -> None:
-        """Refuse a repeat on the first wave of a loop, with no phase to repeat yet."""
+        """Refuse a repeat on the first wave of a loop, with no wave to repeat yet."""
         review_dir = Path(self.review_dir, "fresh")
         review_dir.mkdir()
-        self.assert_cli_error(
-            "init", review_dir, "A", "--repeat", "--assessor", ASSESSOR
-        )
+        self.assert_cli_error("init", review_dir, "--repeat", "--assessor", ASSESSOR)
+
+    def test_init_refuses_a_cap_outside_the_wave(self) -> None:
+        """Refuse a cap on a domain the wave does not run."""
+        review_dir = Path(self.review_dir, "outside")
+        review_dir.mkdir()
+        with self.assertRaisesRegex(SystemExit, "does not run: tests"):
+            self.run_init(review_dir, "A", "--cap", "tests=1")
 
     def test_a_later_cap_overrides_one_wave_alone(self) -> None:
         """Leave the loop caps alone on a cap given after the first wave."""
@@ -2647,7 +2703,7 @@ class WorkflowTest(CliFixture):
         return recap
 
     def test_a_loop_of_three_waves(self) -> None:
-        """Three waves run end to end, the second phase following the first and repeating it after."""
+        """Run phases A, B, and A end to end."""
         first = self.wave_one()
         second = self.wave_two(first)
         self.wave_three(second)
@@ -2685,7 +2741,7 @@ class WorkflowTest(CliFixture):
 
     def wave_three(self, second: Path) -> Path:
         """Phase A again on lowered caps, over a reviewer that drifts from the format once."""
-        report, _ = self.open_wave("A", "--repeat")
+        report, _ = self.open_wave("A")
         self.assertEqual(
             review.read_metadata(report).domain_caps,
             {"correctness": 2, "readability": 1},
