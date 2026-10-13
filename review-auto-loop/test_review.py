@@ -488,6 +488,130 @@ class LetteredOptionsTest(unittest.TestCase):
         self.assertRaises(IndexError, self.lettered, 27)
 
 
+class IndexEntryStyleTest(unittest.TestCase):
+    """The emphasis an index entry takes from the severities and verdicts of its item."""
+
+    def line(
+        self, reviewer: str, claim: str, severity: str, proposal: str, judge: str
+    ) -> str:
+        """Render the index line of an item C1 carrying these ratings."""
+        return review.IndexEntry(
+            "C1", "c1", reviewer, claim, severity, proposal, judge
+        ).line()
+
+    def assert_styled_severities(
+        self, cases: collections.abc.Iterable[tuple[str, str, str, str, str, str]]
+    ) -> None:
+        """Check each case's ratings style the entry by the severity it names."""
+        for *ratings, expected in cases:
+            with self.subTest(ratings=ratings):
+                entry = review.IndexEntry("C1", "c1", *ratings)
+                self.assertEqual(entry.styled_severity(), expected)
+
+    def test_each_style_marks_up_the_whole_text(self) -> None:
+        """Wrap a critical entry's text in a highlight and bold, a major one's in bold, and leave a minor one's bare."""
+        self.assertEqual(
+            self.line("major", "holds", "critical", "apply", ""),
+            "  - [<mark>**C1 / major / holds, critical, apply**</mark>](#c1)",
+        )
+        self.assertEqual(
+            self.line("major", "holds", "major", "apply", "agree"),
+            "  - [**C1 / major / holds, apply / agree**](#c1)",
+        )
+        self.assertEqual(
+            self.line("major", "holds", "minor", "apply", ""),
+            "  - [C1 / major / holds, minor, apply](#c1)",
+        )
+
+    def test_the_assessor_severity_sets_the_style(self) -> None:
+        """Style an entry the assessor does not decline by the assessor's severity, whatever the reviewer's and the judge's."""
+        self.assert_styled_severities(
+            (
+                ("critical", "holds", "critical", "apply", "", "critical"),
+                ("major", "holds", "major", "apply", "agree", "major"),
+                ("major", "holds", "minor", "apply", "", "minor"),
+                ("minor", "partly holds", "major", "apply with changes", "", "major"),
+                ("major", "holds", "major", "your call", "option b", "major"),
+                ("minor", "holds", "minor", "your call", "option a", "minor"),
+                (
+                    "critical",
+                    "holds",
+                    "critical",
+                    "apply",
+                    "disagree, decline",
+                    "critical",
+                ),
+                (
+                    "major",
+                    "holds",
+                    "major",
+                    "apply with changes",
+                    "disagree, apply",
+                    "major",
+                ),
+            )
+        )
+
+    def test_a_decline_is_plain_unless_the_judge_applies(self) -> None:
+        """Leave an entry the assessor declines plain, unless the judge recommends applying it."""
+        self.assert_styled_severities(
+            (
+                ("critical", "holds", "critical", "decline", "", ""),
+                ("critical", "holds", "critical", "decline", "agree", ""),
+                ("major", "holds", "major", "decline", "not judged", ""),
+                ("major", "holds", "major", "decline", "disagree, apply", "major"),
+                (
+                    "critical",
+                    "partly holds",
+                    "critical",
+                    "decline",
+                    "disagree, apply-with-changes",
+                    "critical",
+                ),
+                ("major", "holds", "minor", "decline", "disagree, apply", "minor"),
+            )
+        )
+
+    def test_a_claim_that_does_not_hold_is_plain_unless_the_judge_applies(
+        self,
+    ) -> None:
+        """Leave an entry whose claim does not hold plain, unless the judge recommends applying it, the reviewer's severity then setting the style."""
+        self.assert_styled_severities(
+            (
+                ("critical", "does not hold", "", "decline", "", ""),
+                ("major", "does not hold", "", "apply with changes", "", ""),
+                ("critical", "does not hold", "", "decline", "agree", ""),
+                ("critical", "does not hold", "", "decline", "not judged", ""),
+                (
+                    "critical",
+                    "does not hold",
+                    "",
+                    "apply with changes",
+                    "disagree, decline",
+                    "",
+                ),
+                (
+                    "critical",
+                    "does not hold",
+                    "",
+                    "decline",
+                    "disagree, apply-with-changes",
+                    "critical",
+                ),
+                ("major", "does not hold", "", "decline", "disagree, apply", "major"),
+                ("minor", "does not hold", "", "decline", "disagree, apply", "minor"),
+                (
+                    "major",
+                    "does not hold",
+                    "",
+                    "apply with changes",
+                    "disagree, apply",
+                    "major",
+                ),
+            )
+        )
+
+
 def reviewer_lines(*domains: str) -> str:
     """Render the status list entry naming the reviewer of each given domain."""
     return "- **Reviewer models**:\n" + "".join(
@@ -1332,9 +1456,9 @@ class WaveTest(WaveFixture):
             lines[lines.index("## Items") + 2 : lines.index("### Correctness") - 1],
             [
                 "- Correctness",
-                "  - [C1 / major / holds, apply](#c1-run-1-item-1)",
+                "  - [**C1 / major / holds, apply**](#c1-run-1-item-1)",
                 (
-                    "  - [C2 / minor / partly holds, major, apply with changes]"
+                    "  - [**C2 / minor / partly holds, major, apply with changes**]"
                     "(#c2-run-1-item-2)"
                 ),
                 "- Readability",
@@ -1361,7 +1485,7 @@ class WaveTest(WaveFixture):
         self.assertEqual(recap, "2 items · 2 apply\n\n- apply: C1, C2\n")
         self.decide(first)
         lines = self.report.read_text().splitlines()
-        self.assertIn("  - [C1 / major / holds, apply](#c1-run-1-item-1)", lines)
+        self.assertIn("  - [**C1 / major / holds, apply**](#c1-run-1-item-1)", lines)
         self.assertIn("**Decision**: applied", lines)
 
     def test_format_waits_for_the_chains(self) -> None:
@@ -2090,10 +2214,32 @@ class JudgeReportTest(JudgedFixture):
         self.run_cli("report", "format", self.report)
         lines = self.report.read_text().splitlines()
         self.assertIn(
-            "  - [C1 / major / holds, apply / agree](#c1-run-1-item-1)", lines
+            "  - [**C1 / major / holds, apply / agree**](#c1-run-1-item-1)", lines
         )
         self.assertIn(
             "  - [C2 / minor / holds, your call / option b](#c2-run-1-item-2)", lines
+        )
+
+    def test_a_judge_override_restores_reviewer_emphasis(self) -> None:
+        """Emphasize a rejected claim when the judge recommends applying it."""
+        self.assess(
+            "C1",
+            "The claim is unsupported",
+            claim="does-not-hold",
+            severity=None,
+            proposal="decline",
+        )
+        self.judge(
+            output=(
+                "**C1**: disagree, apply-with-changes\n\n"
+                "The bounded fix is needed.\n\n**C2**: agree\n"
+            )
+        )
+        self.run_cli("report", "format", self.report)
+        self.assertIn(
+            "  - [**C1 / major / does not hold, decline / "
+            "disagree, apply-with-changes**](#c1-run-1-item-1)",
+            self.report.read_text().splitlines(),
         )
 
     def test_the_recap_frames_each_agent_apart(self) -> None:
@@ -2780,7 +2926,7 @@ class WorkflowTest(CliFixture):
         lines = report.read_text().splitlines()
         self.assertIn(f"- **Judge model**: {review.JUDGE_MODEL_NAME}", lines)
         self.assertIn(
-            "  - [C1 / major / holds, apply / agree](#c1-run-1-item-1)", lines
+            "  - [**C1 / major / holds, apply / agree**](#c1-run-1-item-1)", lines
         )
         self.assertIn("::: note", lines)
         self.run_cli(

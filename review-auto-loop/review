@@ -1580,6 +1580,18 @@ class IndexEntry:
     proposal: str = ""
     judge: str = ""
 
+    def styled_severity(self) -> str:
+        """Pick the severity the entry is styled by, empty for none."""
+        judge_applies = self.judge in (
+            "disagree, apply",
+            "disagree, apply-with-changes",
+        )
+        if self.claim == Claim.DOES_NOT_HOLD:
+            return self.reviewer_severity if judge_applies else ""
+        if self.proposal == Proposal.DECLINE and not judge_applies:
+            return ""
+        return self.severity
+
     def line(self) -> str:
         """Render the entry as one item line of the index, its whole text linking to the item."""
         moved = "" if self.severity == self.reviewer_severity else self.severity
@@ -1591,6 +1603,11 @@ class IndexEntry:
             self.judge,
         )
         text = " / ".join(field for field in fields if field)
+        match self.styled_severity():
+            case Severity.CRITICAL:
+                text = f"<mark>**{text}**</mark>"
+            case Severity.MAJOR:
+                text = f"**{text}**"
         return f"  - [{text}](#{self.anchor})"
 
 
