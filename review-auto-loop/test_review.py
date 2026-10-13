@@ -660,15 +660,21 @@ class CliFixture(unittest.TestCase):
         return self.run_cli("init", *argv, "--assessor", assessor)
 
     def run_with_agent(
-        self, *argv: Any, output: str, status: int = 0, hax: bool = True
+        self,
+        *argv: Any,
+        output: str,
+        diagnostics: str = "",
+        status: int = 0,
+        hax: bool = True,
     ) -> str:
-        """Run a subcommand with the agent replaced by one writing the given output, with hax on PATH or not."""
+        """Run a subcommand with the agent replaced by one writing the given output and diagnostics, with hax on PATH or not."""
 
         def jj(args: list[str]) -> str:
             return "/repo\n" if args == ["root"] else DIFF
 
         def agent(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
             kwargs["stdout"].write(output)
+            kwargs["stderr"].write(diagnostics)
             return subprocess.CompletedProcess(args, status)
 
         with (
@@ -2427,18 +2433,18 @@ class UnjudgedWaveTest(WaveFixture):
 class ChainRunTest(WaveFixture):
     """Running a chain's next review and capturing its output."""
 
-    def run_chain(
-        self, domain: str, output: str = ONE_ITEM, status: int = 0, hax: bool = True
-    ) -> str:
+    def run_chain(self, domain: str, output: str = ONE_ITEM, **agent: Any) -> str:
         """Run a chain with the reviewer replaced by one writing the given output."""
         return self.run_with_agent(
-            "chain", "run", self.report, domain, output=output, status=status, hax=hax
+            "chain", "run", self.report, domain, output=output, **agent
         )
 
     def test_it_captures_the_reviewer_output(self) -> None:
-        """Name the capture after the run once the reviewer is through, and print its path."""
+        """Name the capture after the run once the reviewer is through, print its path, and drop the reviewer's diagnostics."""
         capture = Path(self.chain("correctness"), "run1.md")
-        self.assertEqual(self.run_chain("correctness").strip(), str(capture))
+        printed = self.run_chain("correctness", diagnostics="hax: session\n")
+        self.assertEqual(printed.strip(), str(capture))
+        self.assertEqual(self.stderr.getvalue(), "")
         self.assertEqual(capture.read_text(), ONE_ITEM)
         self.assertEqual(list(self.chain("correctness").iterdir()), [capture])
 
@@ -2581,14 +2587,19 @@ class ChainRunTest(WaveFixture):
         self.assertTrue(Path(chain, f"run1.md{review.REJECTED_SUFFIX}").is_file())
 
     def test_a_failed_run_leaves_nothing_behind(self) -> None:
-        """Forward a failed reviewer's output and exit code, and leave no capture."""
+        """Forward a failed reviewer's output, diagnostics and exit code, and leave no capture."""
         with self.assertRaises(SystemExit) as caught:
-            self.run_chain("correctness", output="Usage limit reached\n", status=3)
+            self.run_chain(
+                "correctness",
+                output="Partial\n",
+                diagnostics="Usage limit reached\n",
+                status=3,
+            )
         self.assertEqual(caught.exception.code, 3)
         self.assertEqual(list(self.chain("correctness").iterdir()), [])
         self.assertEqual(
             self.stderr.getvalue(),
-            "Usage limit reached\nAgent run failed: hax exited 3\n",
+            "Partial\nUsage limit reached\nAgent run failed: hax exited 3\n",
         )
 
     def test_a_reviewer_that_never_starts_leaves_nothing_behind(self) -> None:
@@ -2601,6 +2612,15 @@ class ChainRunTest(WaveFixture):
             self.assertRaises(FileNotFoundError),
         ):
             self.run_cli("chain", "run", self.report, "correctness")
+        self.assertEqual(list(self.chain("correctness").iterdir()), [])
+
+    def test_a_run_without_room_for_diagnostics_leaves_nothing_behind(self) -> None:
+        """Leave no capture standing in for a run that cannot set aside its reviewer's diagnostics."""
+        with (
+            mock.patch.object(review.tempfile, "TemporaryFile", side_effect=OSError),
+            self.assertRaises(OSError),
+        ):
+            self.run_chain("correctness")
         self.assertEqual(list(self.chain("correctness").iterdir()), [])
 
     def test_the_next_run_follows_the_captures(self) -> None:
@@ -2720,13 +2740,14 @@ class SummaryRunTest(WaveFixture):
         self.assertEqual(self.summary.read_text(), SUMMARY)
 
     def test_a_terminated_run_stops_its_agent_and_leaves_nothing_behind(self) -> None:
-        """Pass termination on to the agent and drop the in-flight capture when the script is terminated mid-run."""
+        """Pass termination on to the agent, forward its diagnostics, and drop the in-flight capture when the script is terminated mid-run."""
         bin_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
         agent_pid = bin_dir / "agent.pid"
         terminated = bin_dir / "agent.terminated"
         for name, body in {
             "jj": f'echo "{bin_dir}"',
-            "hax": f"""trap 'kill $!; touch "{terminated}"; exit 143' TERM
+            "hax": f"""trap 'kill $!; echo Stopped >&2; touch "{terminated}"; exit 143' TERM
+echo Started >&2
 echo $$ > "{agent_pid}.tmp" && mv "{agent_pid}.tmp" "{agent_pid}"
 sleep 10 & wait""",
         }.items():
@@ -2737,14 +2758,17 @@ sleep 10 & wait""",
             [SCRIPT, "summary", "run", self.report],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
             env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
         )
         while not agent_pid.exists():
             self.assertIsNone(script.poll())
             time.sleep(0.01)
         script.send_signal(signal.SIGTERM)
-        self.assertEqual(script.wait(timeout=10), 128 + signal.SIGTERM)
+        _, diagnostics = script.communicate(timeout=10)
+        self.assertEqual(script.returncode, 128 + signal.SIGTERM)
+        self.assertIn("Started\nStopped\n", diagnostics)
         with self.assertRaises(ProcessLookupError):
             os.kill(int(agent_pid.read_text()), 0)
         self.assertTrue(terminated.exists())

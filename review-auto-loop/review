@@ -1089,34 +1089,38 @@ def run_agent(
     capture: Path,
     check: collections.abc.Callable[[Path], None],
 ) -> Path:
-    """Run one agent, capture its output, and give the capture its final name, or write it to stderr when the run fails."""
+    """Run one agent, capture its output, and give the capture its final name, or write it and the agent's diagnostics to stderr when the run fails."""
     running = capture.with_name(capture.name + RUNNING_SUFFIX)
-    try:
-        stdout = running.open("x")
-    except FileExistsError:
-        raise SystemExit(f"A run is still writing {capture.name}") from None
-    status = 1
-    try:
-        with (
-            stdout,
-            subprocess.Popen(
-                argv,
-                stdin=subprocess.DEVNULL,
-                stdout=stdout,
-                cwd=jj_output(["root"]).strip(),
-                # hide discovered skills from a hax agent
-                env=os.environ | {"HAX_NO_SKILLS": "1"},
-            ) as agent,
-        ):
-            try:
-                status = agent.wait()
-            finally:
-                # stop an agent still running on the way out, letting it end what it started
-                agent.terminate()
-    finally:
-        if status:
-            sys.stderr.write(running.read_text())
-            running.unlink()
+    with tempfile.TemporaryFile("w+") as diagnostics:
+        try:
+            stdout = running.open("x")
+        except FileExistsError:
+            raise SystemExit(f"A run is still writing {capture.name}") from None
+        status = 1
+        try:
+            with (
+                stdout,
+                subprocess.Popen(
+                    argv,
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout,
+                    stderr=diagnostics,
+                    cwd=jj_output(["root"]).strip(),
+                    # hide discovered skills from a hax agent
+                    env=os.environ | {"HAX_NO_SKILLS": "1"},
+                ) as agent,
+            ):
+                try:
+                    status = agent.wait()
+                finally:
+                    # stop an agent still running on the way out, letting it end what it started
+                    agent.terminate()
+        finally:
+            if status:
+                sys.stderr.write(running.read_text())
+                running.unlink()
+                diagnostics.seek(0)
+                sys.stderr.write(diagnostics.read())
     if status:
         print(f"Agent run failed: {argv[0]} exited {status}", file=sys.stderr)
         raise SystemExit(status)
