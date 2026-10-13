@@ -15,4 +15,4 @@ The script prints a JSON object:
 - `sources`: the pages backing the answer, each with `url`, `title` and `excerpt`. An excerpt is the search model's paraphrase, not a quote: open the page when you need its exact wording.
 - `searches`: what the search model did, in order: a `search` with its `queries` and the URLs it `consulted`, or an `open_page` or `find_in_page` on a `url`.
 
-A `BorrowKeyError` means the Codex login could not be loaded or refreshed: report its message to the user.
+A `LoginError` means the ChatGPT login of hax is missing or could not be renewed: report its message to the user.

@@ -1,23 +1,39 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["llm==0.36", "llm-openai-codex==0.8.0"]
+# dependencies = ["openai==3.29.0"]
 # ///
-"""Search the web with OpenAI's hosted search tool, through the ChatGPT login of Codex."""
+"""Search the web with OpenAI's hosted search tool, through the ChatGPT login of hax."""
 
 import argparse
+import base64
+import fcntl
 import json
+import os
 import re
+import signal
+import tempfile
+import time
+import urllib.error
 import urllib.parse
+import urllib.request
+from pathlib import Path
 from typing import Any
 
-from llm.default_plugins.openai_models import WebSearch
-from llm.parts import ToolCallPart
-from llm_openai_codex import CodexResponsesModel
+import openai
+from openai.types.responses import (
+    ResponseCompletedEvent,
+    ResponseErrorEvent,
+    ResponseFailedEvent,
+    ResponseFunctionWebSearch,
+    ResponseIncompleteEvent,
+    ResponseOutputItemDoneEvent,
+    ResponseTextDeltaEvent,
+)
 
 MODEL = "gpt-6-luna"
 REASONING_EFFORT = "medium"
-SCHEMA = {
+SCHEMA: dict[str, object] = {
     "type": "object",
     "additionalProperties": False,
     "required": ["answer", "sources"],
@@ -41,6 +57,95 @@ SCHEMA = {
 # URL in Markdown text, without the Markdown syntax around it
 URL_RE = re.compile(r"https?://(?:[^\s()<>\[\]`]|\([^\s()`]*\))+")
 TRACKING_PARAM = "utm_source=openai"
+CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
+TOKEN_URL = "https://auth.openai.com/oauth/token"
+# OAuth client of the ChatGPT login of hax
+CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+# remaining validity under which an access token is renewed, in seconds
+RENEWAL_MARGIN = 600
+
+
+class LoginError(Exception):
+    """Missing or unrenewable ChatGPT login of hax."""
+
+
+def read_store(store: Path) -> dict[str, Any]:
+    """Return the content of the hax credentials store, requiring a ChatGPT login in it."""
+    content = json.loads(store.read_text()) if store.exists() else {}
+    if "codex" not in content:
+        raise LoginError(f"No ChatGPT login in {store}, run /login in hax")
+    return content
+
+
+def expiring(access_token: str) -> bool:
+    """Tell whether an access token expires within the renewal margin."""
+    payload = access_token.split(".")[1]
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    return claims["exp"] <= time.time() + RENEWAL_MARGIN
+
+
+def renewed_tokens(refresh_token: str) -> dict[str, str]:
+    """Exchange a refresh token for new tokens."""
+    request = urllib.request.Request(
+        TOKEN_URL,
+        data=json.dumps(
+            {
+                "client_id": CLIENT_ID,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            }
+        ).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            tokens = json.load(response)
+    except urllib.error.HTTPError as error:
+        raise LoginError(
+            f"Renewing the ChatGPT login of hax failed: {error} {error.read().decode()}"
+        ) from error
+    renewed = {
+        key: value
+        for key, value in tokens.items()
+        if key in ("access_token", "refresh_token", "id_token")
+        and isinstance(value, str)
+        and value
+    }
+    if "access_token" not in renewed:
+        raise LoginError("Renewing the ChatGPT login of hax returned no access token")
+    return renewed
+
+
+def hax_login() -> dict[str, str]:
+    """Return the ChatGPT login of hax, renewed in its credentials store when about to expire."""
+    state_home = os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state"
+    store = (Path(state_home) / "hax/auth.json").resolve()
+    login = read_store(store)["codex"]
+    if not expiring(login["access_token"]):
+        return login
+    # renewal lock of hax, under which the store is read again to pick up another
+    # process's renewal
+    with open(f"{store}.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        content = read_store(store)
+        login = content["codex"]
+        if expiring(login["access_token"]):
+            # signals ending the script, held while the refresh token is spent and its
+            # replacement saved
+            signals = {signal.SIGHUP, signal.SIGINT, signal.SIGTERM}
+            mask = signal.pthread_sigmask(signal.SIG_BLOCK, signals)
+            try:
+                login.update(renewed_tokens(login["refresh_token"]))
+                with tempfile.NamedTemporaryFile(
+                    "w", dir=store.parent, delete_on_close=False
+                ) as new_store:
+                    json.dump(content, new_store, indent=2)
+                    new_store.flush()
+                    os.fsync(new_store.fileno())
+                    os.replace(new_store.name, store)
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+    return login
 
 
 def strip_tracking_param(match: re.Match[str]) -> str:
@@ -52,22 +157,46 @@ def strip_tracking_param(match: re.Match[str]) -> str:
 
 def search(query: str) -> dict[str, Any]:
     """Ask the search model a question, and return its answer, sources and searches."""
-    response = CodexResponsesModel(MODEL).prompt(
-        query,
-        schema=SCHEMA,
-        tools=[WebSearch(external_web_access=True, include_sources=True)],
-        tool_choice="required",
-        hide_reasoning=True,
-        reasoning_effort=REASONING_EFFORT,
+    login = hax_login()
+    client = openai.OpenAI(
+        api_key=login["access_token"],
+        base_url=CODEX_BASE_URL,
+        default_headers={"ChatGPT-Account-ID": login["account_id"]},
     )
-    result = json.loads(response.text())
+    text = []
+    actions = []
+    with client.responses.create(
+        model=MODEL,
+        input=[{"role": "user", "content": query}],
+        tools=[{"type": "web_search", "external_web_access": True}],
+        tool_choice="required",
+        include=["web_search_call.action.sources"],
+        reasoning={"effort": REASONING_EFFORT},
+        text={"format": {"type": "json_schema", "name": "answer", "schema": SCHEMA}},
+        store=False,
+        stream=True,
+    ) as events:
+        for event in events:
+            match event:
+                case ResponseTextDeltaEvent():
+                    text.append(event.delta)
+                case ResponseOutputItemDoneEvent(
+                    item=ResponseFunctionWebSearch() as call
+                ):
+                    actions.append(call.action.model_dump())
+                case ResponseCompletedEvent():
+                    break
+                case ResponseFailedEvent() | ResponseIncompleteEvent():
+                    response = event.response
+                    raise RuntimeError(
+                        f"Search {response.status}: {response.error or response.incomplete_details}"
+                    )
+                case ResponseErrorEvent():
+                    raise RuntimeError(event.message)
+        else:
+            raise RuntimeError("Search stream ended before completion")
+    result = json.loads("".join(text))
     result["answer"] = URL_RE.sub(strip_tracking_param, result["answer"])
-    actions = [
-        part.arguments
-        for message in response.messages()
-        for part in message.parts
-        if isinstance(part, ToolCallPart)
-    ]
     result["searches"] = [
         {
             "type": action["type"],
