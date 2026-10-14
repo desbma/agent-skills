@@ -33,6 +33,7 @@ The work of updating tests is never an argument against a simplification: if cod
 - Use idiomatic, self-documenting interfaces; for example, Python `__str__` or Rust `Display` rather than a custom `to_string` method
 - Rely on types rather than unenforced conventions
 - Align a diverging error-handling, logging, or naming pattern with the one prevailing in the module
+- Move a symbol the change adds to the scope or module it belongs in: a shared one when it is general enough for other code to reuse, or the one it is most closely tied to, such as a method of the type it operates on, or a function of the module owning the data it handles
 - Where it helps, split a large source file into smaller modules with clear responsibilities
 
 ### Python specific
