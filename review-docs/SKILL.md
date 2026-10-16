@@ -36,5 +36,12 @@ Also report comments and docstrings that break the rules of the "Comment and doc
 - Fix documentation that is out of sync, only delete it when what it describes is gone
 - When documentation lists cases and the change adds one, reword it around a term that covers them all rather than append the new case; keep the list only where the reader needs each case named, such as a reference of options, and never trade precision the reader needs for a vaguer term
 - Be sparing with new documentation, do not propose any for its own sake
-- Anchor severity to what the documentation makes its reader do: `critical` when following it destroys state or costs work that cannot be recovered; `major` when it contradicts the code and sends the reader down a path that does not exist; `minor` for a style rule break, an enumeration a general term would replace, or for documentation missing where the code already says it
 - Stay on documentation: correctness, readability and test coverage are covered by other review domains
+
+## Severity
+
+Anchor severity to what the documentation makes its reader do:
+
+- `critical` — following it destroys state or costs work that cannot be recovered
+- `major` — it contradicts the code and sends the reader down a path that does not exist
+- `minor` — a style rule break, an enumeration a general term would replace, or documentation missing where the code already says it

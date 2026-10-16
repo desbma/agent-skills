@@ -27,5 +27,14 @@ Propose to:
 - Never propose to change the main code to make it easier to test, take it as it is
 - Prefer a few meaningful tests over coverage for its own sake
 - State the regression each proposed test would catch
-- Anchor severity to the signal the suite gives today: `critical` when the signal is false — a test pinning wrong behavior as correct, or one that fails on states the code handles; `major` for behavior left untested that would regress silently; `minor` for a redundant or useless test, and for a case another test already covers
 - Stay on tests: correctness, readability and documentation are covered by other review domains
+
+## Severity
+
+A branch is an alternative the code can take: an arm of an `if`, a `match` or a conditional expression, an exception handler, a loop body, the right operand of a short-circuit `and` or `or`, a function's body. A test checks a branch when it fails once that branch is deleted.
+
+Rate the defect of the suite the item reports by the signal the suite gives:
+
+- `critical` — a false signal: an existing assertion expects a result the code should not produce, or a test fails on a state the code handles
+- `major` — no signal: a branch the revision adds is checked by no test
+- `minor` — any other defect: a branch the revision did not add is checked by no test, a value a checked branch computes goes unasserted, a test is redundant or useless

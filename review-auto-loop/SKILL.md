@@ -49,7 +49,7 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 
 The claim judges the item as the reviewer wrote it — whether its diagnosis survives reading the code, and how severe what survives is — and nothing else. It never carries a course of action. Assessing an item again replaces its assessment, until the item is decided.
 
-The severity follows the claim: the reviewer's own, kept when it stands, replaced when it does not, the analysis then saying what moved it. State it on every item rather than let silence stand for agreement; the reviewer's own stays visible in the quoted item, so a downgrade reads as a disagreement and not as an erasure. A `partly-holds` item is rated on what survives, not on what the reviewer claimed. `does-not-hold` is the one exception: no defect survives, so there is nothing to rate.
+The severity follows the claim: the reviewer's own, kept when it stands, replaced when it does not, the analysis then saying what moved it. Rate it against the `## Severity` sections of `<SKILL_DIR>/../review-common.md` and of the item's domain skill, `<SKILL_DIR>/../review-<domain>/SKILL.md`, reading only those sections. State it on every item rather than let silence stand for agreement; the reviewer's own stays visible in the quoted item, so a downgrade reads as a disagreement and not as an erasure. A `partly-holds` item is rated on what survives, not on what the reviewer claimed. `does-not-hold` is the one exception: no defect survives, so there is nothing to rate.
 
 The proposal carries the course of action, never empty:
 

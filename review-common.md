@@ -77,14 +77,16 @@ For each item:
 
 The references save the reader a search: the file and the lines the item turns on, one per place when it spans several. An item with no definite site — documentation a change never wrote, a pattern spread across the revision — carries the title alone, without the em dash.
 
+The estimate covers everything the item asks for, tests included, and carries its sign: `-8 lines`, `+3 lines`, `0 lines`. A range, and a short qualifier saying where the lines go, are both fine: `+8 to 15 lines including a regression test`.
+
+Order items by decreasing impact.
+
+## Severity
+
 Severity rates the consequence of leaving the item unfixed — how bad it is, and how readily it is reached. It rates neither the effort of fixing it nor how strongly you believe the item is right:
 
 - `critical` — a severe consequence, on a path ordinary use reaches
 - `major` — a real consequence, but bounded, recoverable, or on a path only some runs reach
 - `minor` — a narrow or cosmetic consequence, or one only a maintainer pays
 
-Each domain anchors these levels to its own kind of consequence, and some domains have no reachable `critical`. Rate an item against those anchors, never against the other items of the review: a review that yields only minor items reports only minor items.
-
-The estimate covers everything the item asks for, tests included, and carries its sign: `-8 lines`, `+3 lines`, `0 lines`. A range, and a short qualifier saying where the lines go, are both fine: `+8 to 15 lines including a regression test`.
-
-Order items by decreasing impact.
+Each domain anchors these levels to its own kind of consequence. Rate an item against those anchors, never against the other items of the review: a review that yields only minor items reports only minor items.

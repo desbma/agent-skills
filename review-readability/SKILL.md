@@ -51,6 +51,12 @@ The work of updating tests is never an argument against a simplification: if cod
 
 Rank the items that remove the most lines first.
 
-Anchor severity to what the code costs whoever reads it next: `major` for a shape that actively misleads — a name or a pattern that suggests behavior the code does not have, or density enough to hide a defect from a reader looking for one; `minor` for everything else, including most line count savings. Readability has no `critical`: code that merely reads badly still runs.
-
 When proposing to delete code as unneeded, show what makes the state impossible: an invariant, a type, or the complete set of call sites. Without it, drop the item.
+
+## Severity
+
+Anchor severity to how the code fails its purpose and its reader:
+
+- `critical` — a revision that defeats its own purpose: its description sets out to simplify or shrink the code, yet it adds more production code than it removes, where removing code would reach that goal
+- `major` — a shape that actively misleads: a name or a pattern that suggests behavior the code does not have, or density enough to hide a defect from a reader looking for one
+- `minor` — everything else, including most line count savings
