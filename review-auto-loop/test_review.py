@@ -350,7 +350,7 @@ class AssessHelpTest(unittest.TestCase):
         claims = (f"holds {rated}", f"partly-holds {rated}", "does-not-hold")
         proposals = (
             "apply [DELTA]",
-            "apply-with-changes ACTION DELTA",
+            "apply-with-changes DELTA ACTION",
             "decline REASON",
             "your-call OPTION OPTION [OPTION ...]",
         )
@@ -1135,8 +1135,8 @@ class WaveTest(WaveFixture):
         self.capture("correctness", 1)
         out = self.assess(
             self.imported("correctness")[0],
-            "bound it in the caller",
             3,
+            "bound it in the caller",
             claim="partly-holds",
             severity="minor",
             proposal="apply-with-changes",
@@ -1304,8 +1304,8 @@ class WaveTest(WaveFixture):
             ["does-not-hold", "minor", "decline", "x"],
             ["holds", "minor", "apply", "x"],
             ["holds", "minor", "apply-with-changes"],
-            ["holds", "minor", "apply-with-changes", "x"],
-            ["holds", "minor", "apply-with-changes", "x", "a few"],
+            ["holds", "minor", "apply-with-changes", "3"],
+            ["holds", "minor", "apply-with-changes", "x", "3"],
             ["holds", "minor", "decline"],
             ["holds", "minor", "your-call", "a"],
             ["holds", "minor", "your-call", "a", "3"],
@@ -1423,8 +1423,8 @@ class WaveTest(WaveFixture):
         self.assess(first)
         self.assess(
             second,
-            "bound it in the caller",
             3,
+            "bound it in the caller",
             claim="partly-holds",
             proposal="apply-with-changes",
             stdin="Only the retry path can overrun it.",

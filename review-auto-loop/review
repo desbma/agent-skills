@@ -1925,17 +1925,17 @@ def build_parser() -> argparse.ArgumentParser:
                     metavar="DELTA",
                     nargs="?",
                     type=int,
-                    help="Lines the item's fix comes to, when the item's estimate is wrong",
+                    help="Net lines the item's fix comes to, added minus removed, when the item's estimate is wrong",
                 )
             elif proposal is Proposal.APPLY_WITH_CHANGES:
-                offer.add_argument(
-                    "action", metavar="ACTION", help="What to do instead"
-                )
                 offer.add_argument(
                     "delta",
                     metavar="DELTA",
                     type=int,
-                    help="Lines that change adds or removes, against the code as it stands",
+                    help="Net lines that change comes to, added minus removed, against the code as it stands",
+                )
+                offer.add_argument(
+                    "action", metavar="ACTION", help="What to do instead"
                 )
             elif proposal is Proposal.DECLINE:
                 offer.add_argument("reason", metavar="REASON", help="Why not")

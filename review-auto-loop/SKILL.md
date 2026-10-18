@@ -60,9 +60,9 @@ The proposal carries the course of action, never empty:
 
 The two are independent. An item whose claim holds still gets `decline` when the fix costs more than the flaw it closes; one whose claim does not hold still gets `apply-with-changes` when checking it uncovered a different, real change. Outside `your-call` the proposal never hedges: "worth doing, or skip" is not a proposal, it is `apply-with-changes` or `your-call`.
 
-The delta an `apply-with-changes` carries is counted, not carried over: the item's own estimate covers the fix the reviewer wrote, and the proposal is a different change. Count what that change adds and removes against the code as it stands, tests included. A `your-call` option that departs from the item states its delta the same way, inside the option's text.
+The delta an `apply-with-changes` carries is counted, not carried over: the item's own estimate covers the fix the reviewer wrote, and the proposal is a different change. Count that change against the code as it stands, tests included, as one net line count: the lines it adds minus those it removes. A change rewriting lines in place counts `0`. A `your-call` option that departs from the item states its delta the same way, inside the option's text.
 
-On an `apply` the item's estimate stands, and the tail is a revision of it: give it only when your own count differs, the analysis then saying what moved it. Silence there is agreement, so count before staying silent.
+On an `apply` the item's estimate stands, and the tail is a revision of that estimate, counted the same way: give the tail only when your own count differs, the analysis then saying what moved it. Silence there is agreement, so count before staying silent.
 
 The severity is what makes a `decline` legible. Declining a `minor` item needs no defense; declining a `critical` one has to name what outweighs it, and when nothing does, the severity was wrong.
 
@@ -111,7 +111,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    ```bash
    <SKILL_DIR>/review item assess <WAVE_REPORT> C3 holds major apply
    <SKILL_DIR>/review item assess <WAVE_REPORT> C4 holds major apply -8
-   <SKILL_DIR>/review item assess <WAVE_REPORT> R2 partly-holds minor apply-with-changes '<what to do instead>' +3
+   <SKILL_DIR>/review item assess <WAVE_REPORT> R2 partly-holds minor apply-with-changes +3 '<what to do instead>'
    <SKILL_DIR>/review item assess <WAVE_REPORT> R5 does-not-hold decline '<why not>'
    <SKILL_DIR>/review item assess <WAVE_REPORT> T1 holds minor your-call '<one option>' '<another>'
    ```
