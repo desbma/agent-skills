@@ -30,6 +30,10 @@ Its output is `<REVIEW_REVISION>`, a per-change identifier stable across amends,
 
 Focus on the current diff, but do not limit the review to the changed code; related code can be reviewed too when needed.
 
+## Conventions
+
+Your global instructions may point to convention files for specific languages or markups. Before writing any item, read the file of every language the diff touches. The code your items propose follows those files and your global instructions, even where the surrounding code does not.
+
 ## Previous reviews
 
 The review dir may already contain reviews of the same revision, from a previous run of this skill or from another review domain, as markdown files named `<REVIEW_REVISION>-wave*.md`. Read them all before starting.
