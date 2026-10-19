@@ -1800,7 +1800,7 @@ class JudgeArgvTest(unittest.TestCase):
     """The command line the judge runs under."""
 
     def test_it_runs_under_claude(self) -> None:
-        """Run a claude agent resolving the judge skill by name, reading and searching only."""
+        """Run a claude agent resolving the judge skill by name, reading and searching only, on the skill and the instruction files alone."""
         argv = review.judge_argv("judge it")
         self.assertEqual(argv[0], "claude")
         self.assertEqual(argv[argv.index("--model") + 1], "claude-fable-5-1")
@@ -1808,6 +1808,10 @@ class JudgeArgvTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("--tools") + 1], "Read,Grep,Glob")
         self.assertIn("--strict-mcp-config", argv)
         self.assertEqual(argv[-2:], ["-p", "/review-judge judge it"])
+        self.assertEqual(argv[argv.index("--system-prompt") + 1], "")
+        self.assertEqual(
+            argv[argv.index("--settings") + 1], '{"autoMemoryEnabled": false}'
+        )
 
 
 class JudgeCheckTest(unittest.TestCase):
@@ -2449,8 +2453,9 @@ class ChainRunTest(WaveFixture):
         self.assertEqual(list(self.chain("correctness").iterdir()), [capture])
 
     def test_it_runs_the_reviewer_over_the_change(self) -> None:
-        """Run a hax reviewer from the repository root, under the skill only, on the change, over the chain dir."""
-        with mock.patch.dict(os.environ, {"HAX_NO_SKILLS": "0"}):
+        """Run a hax reviewer from the repository root, with a trimmed prompt, on the change, over the chain dir."""
+        variables = ("HAX_NO_SKILLS", "HAX_NO_SUBAGENTS", "HAX_NO_TASKS")
+        with mock.patch.dict(os.environ, dict.fromkeys(variables, "0")):
             self.run_chain("readability")
             self.assertEqual(os.environ["HAX_NO_SKILLS"], "0")
         argv = self.spawn.call_args.args[0]
@@ -2470,7 +2475,9 @@ class ChainRunTest(WaveFixture):
         )
         self.assertIn(CHANGE_ID, argv[-1])
         self.assertIn(str(self.chain("readability")), argv[-1])
-        self.assertEqual(self.spawn.call_args.kwargs["env"]["HAX_NO_SKILLS"], "1")
+        for variable in variables:
+            with self.subTest(variable=variable):
+                self.assertEqual(self.spawn.call_args.kwargs["env"][variable], "1")
         self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
 
     def test_without_hax_it_runs_a_pi_reviewer(self) -> None:

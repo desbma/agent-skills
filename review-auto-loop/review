@@ -1106,8 +1106,11 @@ def run_agent(
                     stdout=stdout,
                     stderr=diagnostics,
                     cwd=jj_output(["root"]).strip(),
-                    # hide discovered skills from a hax agent
-                    env=os.environ | {"HAX_NO_SKILLS": "1"},
+                    # hide from a hax agent the prompt sections a review does not use
+                    env=os.environ
+                    | dict.fromkeys(
+                        ("HAX_NO_SKILLS", "HAX_NO_SUBAGENTS", "HAX_NO_TASKS"), "1"
+                    ),
                 ) as agent,
             ):
                 try:
@@ -1218,6 +1221,11 @@ def judge_argv(prompt: str) -> list[str]:
         "Read,Grep,Glob",
         # MCP servers reach the judge as deferred tools, past --tools
         "--strict-mcp-config",
+        # leave the skill and the instruction files as the judge's only instructions
+        "--system-prompt",
+        "",
+        "--settings",
+        '{"autoMemoryEnabled": false}',
         "-p",
         f"/review-judge {prompt}",
     ]
