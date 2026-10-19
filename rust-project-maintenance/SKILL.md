@@ -104,7 +104,7 @@ Run:
 
 ```bash
 cargo upgrade
-cargo update
+cargo update --config 'resolver.incompatible-rust-versions="fallback"'
 cargo check
 ```
 
@@ -112,8 +112,9 @@ Fix any compilation errors reported by `cargo check`. If the project supports di
 
 ### Dependencies breaking update
 
-Run the _Dependencies compatible update_ task, by using `cargo upgrade -i`, and follow the same checks.
-You will likely need to so some adjustments to the code to accommodate for the breaking changes.
+Run the _Dependencies compatible update_ task, using `cargo upgrade -i --ignore-rust-version` and `cargo update --config 'resolver.incompatible-rust-versions="allow"'`, and follow the same checks.
+Dependency upgrades may raise the MSRV; the _MSRV check_ task updates `rust-version` accordingly.
+You will likely need to do some adjustments to the code to accommodate for the breaking changes.
 
 ### Cargo audit
 
