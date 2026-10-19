@@ -1,6 +1,6 @@
 ---
 name: rust-project-maintenance
-description: Execute Rust project maintenance around dependencies, clippy lints lists, etc.
+description: Execute Rust project maintenance around dependencies, Clippy lint lists, etc.
 disable-model-invocation: true
 ---
 
@@ -28,7 +28,7 @@ Once all tasks are done, show a final _progress report_.
 
 ### Progress report
 
-Show a status output for the user, with number of tasks already executed or skipped, the total number of tasks, and the status for each task ("done", "skipped", "review", "pending"). Tasks that required no action are considered "done", tasks waiting for user approval to continue are in "review" state.
+Show a status output for the user, with the number of tasks already executed or skipped, the total number of tasks, and the status for each task ("done", "skipped", "review", "pending"). Tasks that required no action are considered "done", tasks waiting for user approval to continue are in "review" state.
 
 Follow the output format of the content of this code block:
 
@@ -44,7 +44,7 @@ Note that `[PENDING]` is omitted for pending tasks.
 
 ## Task list
 
-Before starting your work, check that the current repository is a Rust project, and if not says so to the user, it is likely an error.
+Before starting your work, check that the current repository is a Rust project, and if not, say so to the user, it is likely an error.
 The list of tasks to execute for each scope follows. Refer to the task definition part for detailed instructions for each task.
 
 ### _Light_ scope
@@ -94,8 +94,8 @@ Compare the current repository `AGENTS.md` file with the reference template at `
 
 - if a bullet point from the "Code Style" part is present in the reference, but not in the local file, add it locally
 - if a bullet point from the "Code Style" part is present in the reference, and overlaps with the meaning of a rule in the local file, keep the most restrictive one
-- ignore difference that can be explained by local project specifics (ie. MSRV, workspace with multiple packages...)
-- if a command from the "Build & Test" part, seems more thorough in the reference than in the local file (ie. runs Clippy or tests with more features, passes more flags to `cargo fmt`...), **and** it makes sense to use such command locally (for example it is not needed to run `cargo test --all-features` if local project has no features), then replace it locally
+- ignore differences that can be explained by local project specifics (e.g. MSRV, workspace with multiple packages...)
+- if a command from the "Build & Test" part seems more thorough in the reference than in the local file (e.g. runs Clippy or tests with more features, passes more flags to `cargo fmt`...), **and** it makes sense to use such command locally (for example it is not needed to run `cargo test --all-features` if local project has no features), then replace it locally
 - once done updating `AGENTS.md`, run build, check and formatting commands, and fix any surfacing issues
 
 ### Dependencies compatible update
@@ -108,13 +108,13 @@ cargo update --config 'resolver.incompatible-rust-versions="fallback"'
 cargo check
 ```
 
-Fix any compilation errors reported by `cargo check`. If the project supports different feature combination or platforms (check this by looking for example at the CI jobs), run `cargo check` for all configurations you can, for example `cargo check --target x86_64-pc-windows-gnu --features foo`. Then run the project's other test/lint/format commands, if any, and fix errors that surface.
+Fix any compilation errors reported by `cargo check`. If the project supports different feature combinations or platforms (check this by looking for example at the CI jobs), run `cargo check` for all configurations you can, for example `cargo check --target x86_64-pc-windows-gnu --features foo`. Then run the project's other test/lint/format commands, if any, and fix errors that surface.
 
 ### Dependencies breaking update
 
 Run the _Dependencies compatible update_ task, using `cargo upgrade -i --ignore-rust-version` and `cargo update --config 'resolver.incompatible-rust-versions="allow"'`, and follow the same checks.
 Dependency upgrades may raise the MSRV; the _MSRV check_ task updates `rust-version` accordingly.
-You will likely need to do some adjustments to the code to accommodate for the breaking changes.
+You will likely need to do some adjustments to the code to accommodate the breaking changes.
 
 ### Cargo audit
 
@@ -125,7 +125,7 @@ Run `cargo audit` and fix all reported warnings:
 
 ### Clippy lint list update
 
-Compare the current Clippy configuration from `lint.*` or `workspace.lint.*` sections in `Cargo.toml` file with the reference template at `https://github.com/desbma/cargo-template/blob/master/Cargo.toml`.
+Compare the current Clippy configuration from `lints.*` or `workspace.lints.*` sections in `Cargo.toml` file with the reference template at `https://github.com/desbma/cargo-template/blob/master/Cargo.toml`.
 Copy the reference lint configuration locally, including comments, but respect lints that were intentionally disabled:
 
 - by being already present in the list commented out
@@ -133,7 +133,7 @@ Copy the reference lint configuration locally, including comments, but respect l
 
 Also copy the `https://github.com/desbma/cargo-template/blob/master/clippy.toml` reference file locally if it is missing or less complete than the reference.
 
-Then run Clippy on the local project, covering all code (including tests and features not enabled by default), and fix any warning that surface, either by running `cargo fix`, by updating the code to fix the root cause, or by ignoring it locally.
+Then run Clippy on the local project, covering all code (including tests and features not enabled by default), and fix any warnings that surface, either by running `cargo fix`, by updating the code to fix the root cause, or by ignoring it locally.
 
 ### MSRV check
 
@@ -145,15 +145,15 @@ Run `cargo msrv verify`. Update reported MSRV if it is incorrect, using `cargo m
 
 Skip this task if the local repository does not have GitHub actions files.
 
-Steps :
+Steps:
 
 - for each workflow in `https://github.com/desbma/cargo-template/tree/master/.github/workflows`, if it exists locally, compare them and consider updating the local version:
   - if a job exists in the reference action, but does not make sense locally (MSRV check when the local project declares no MSRV) => ignore it
   - for the `release` workflow, only update jobs existing locally, do not add new ones
-  - do not make changes that affect the output (ie. compilation toolchains, library packages installed), as it is highly project specific
+  - do not make changes that affect the output (e.g. compilation toolchains, library packages installed), as it is highly project specific
   - ignore the `untemplate` line noise, it is an artifact of the `cargo-generate` use
-  - if a check is in the reference action, and not in the local one, or is more thorough in the reference (ie. runs Clippy on test code and the local project has tests) **and** it makes sense to use such command locally (for example it is not needed to run `cargo test --all-features` if local project has no features) => add it
-- run `pinact run -u --min-age 10` to update GitHub actions versions, and pin it with hashes
+  - if a check is in the reference action, and not in the local one, or is more thorough in the reference (e.g. runs Clippy on test code and the local project has tests) **and** it makes sense to use such command locally (for example it is not needed to run `cargo test --all-features` if local project has no features) => add it
+- run `pinact run -u --min-age 10` to update GitHub actions versions, and pin them with hashes
 
 ### Changelog template update
 
@@ -169,5 +169,5 @@ Compare the current `release` script file with the reference template at `https:
 
 - changelog update if the local project has no changelog
 - different base version for the changelog
-- different version convention (ie. CalVer vs SemVer)
+- different version convention (e.g. CalVer vs SemVer)
 - beta version naming replacements if the local project has no beta version
