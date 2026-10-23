@@ -1,116 +1,87 @@
 digraph review_workflow {
-    rankdir=LR
-    splines=polyline
-    // Ranks doubled through minlen, leaving a free rank between run columns for the note
-    ranksep=0.25
-    // Halved, so the column ordering edges space boxes as usual and hug brackets to their row
-    nodesep=0.125
+    layout=neato
+    inputscale=72
+    splines=line
+    pad=0.2
     node [shape=box, style="rounded,filled", fontname="Helvetica"]
-    edge [fontname="Helvetica", fontsize=10, minlen=2]
+    edge [fontname="Helvetica", fontsize=10]
 
-    // Main agent
+    // Main agent, waves sized and spaced like the judges, mirroring their arrows
     node [fillcolor="#cfe2f3"]
-    wave_a [label="Wave A"]
-    wave_b [label="Wave B"]
-    apply_a [group=a, label="main agent\napplies fixes"]
-    apply_b [group=b, label="main agent\napplies fixes"]
+    wave_a [label="Wave A", pos="-15,266!", width=1.46, height=0.8]
+    wave_b [label="Wave B", pos="-15,77!", width=1.46, height=0.8]
+    apply_a [label="main agent\napplies fixes", pos="888,266!"]
+    apply_b [label="main agent\napplies fixes", pos="888,77!"]
 
-    // Reviewers
+    // Reviewers, in run columns, two rows per wave
     node [fillcolor="#fff2cc"]
-    correctness [label="review-correctness\nrun 1"]
-    readability [label="review-readability\nrun 1"]
-    tests [label="review-tests\nrun 1"]
-    docs [label="review-docs\nrun 1"]
+    correctness [label="review-correctness\nrun 1", pos="180,296!"]
+    readability [label="review-readability\nrun 1", pos="180,236!"]
+    tests [label="review-tests\nrun 1", pos="180,107!"]
+    docs [label="review-docs\nrun 1", pos="180,47!"]
     node [style="rounded,filled,dotted"]
-    correctness_n [label="review-correctness\nrun 2 … N"]
-    readability_n [label="review-readability\nrun 2 … N"]
-    tests_n [label="review-tests\nrun 2 … N"]
-    docs_n [label="review-docs\nrun 2 … N"]
+    correctness_n [label="review-correctness\nrun 2 … N", pos="365,296!"]
+    readability_n [label="review-readability\nrun 2 … N", pos="365,236!"]
+    tests_n [label="review-tests\nrun 2 … N", pos="365,107!"]
+    docs_n [label="review-docs\nrun 2 … N", pos="365,47!"]
 
-    // Judge
-    node [style="rounded,filled,bold", fillcolor="#d9ead3"]
-    judge_a [group=a, label="review-judge"]
-    judge_b [group=b, label="review-judge"]
+    // Judge, tall enough for its two arrows to arrive on its left side
+    node [style="rounded,filled", fillcolor="#d9ead3", height=0.8]
+    judge_a [label="review-judge", pos="560,266!"]
+    judge_b [label="review-judge", pos="560,77!"]
 
     // User
-    node [shape=ellipse, style=filled, fillcolor=lightgrey]
-    user_a [group=a, label="user decides"]
-    user_b [group=b, label="user decides"]
+    node [shape=ellipse, style=filled, fillcolor=lightgrey, height=0.5]
+    user_a [label="user decides", pos="725,266!"]
+    user_b [label="user decides", pos="725,77!"]
 
-    // Brackets spanning the reviewer boxes of each row, one half per run column, widths matching the row's widest box
+    // Bracket spanning the run columns of the first wave's reviewers, and its note
     node [shape=plain, style=""]
-    bracket_a1 [label=<<table border="0" cellborder="1" cellspacing="0"><tr><td sides="LB" width="146" height="8"></td></tr></table>>]
-    bracket_a2 [label=<<table border="0" cellborder="1" cellspacing="0"><tr><td sides="BR" width="146" height="8"></td></tr></table>>]
-    bracket_b1 [label=<<table border="0" cellborder="1" cellspacing="0"><tr><td sides="LT" width="100" height="8"></td></tr></table>>]
-    bracket_b2 [label=<<table border="0" cellborder="1" cellspacing="0"><tr><td sides="TR" width="100" height="8"></td></tr></table>>]
+    bracket_a [pos="272,202!", label=<<table border="0" cellborder="1" cellspacing="0"><tr><td sides="LBR" width="331" height="8"></td></tr></table>>]
+    note [pos="272,188!", fontsize=10, label="number of runs auto scales with reviewed diff size"]
 
-    // Waypoints pinning the lines crossing between the rows, and the note between them
+    // Corners of the repeat and hand-off lines
     node [shape=point, style=invis, width=0]
-    repeat_a1; repeat_a2; repeat_a3; note_1; note; note_2
+    repeat_a1 [pos="888,340!"]; repeat_a2 [pos="-15,340!"]
+    repeat_b1 [pos="888,1!"]; repeat_b2 [pos="-15,1!"]
     // Dots as wide as the hand-off line, joining its segments
     node [style="", width=0.028, penwidth=0, fillcolor=black]
-    handoff_1; handoff_2
-
-    // One row per wave, time running left to right within a row
-    {rank=same; wave_a; wave_b}
-
-    // Top to bottom order of each run column, brackets hugging their row
-    {
-        rank=same
-        edge [style=invis, minlen=1]
-        correctness -> readability
-        bracket_a1 -> repeat_a1 -> note_1 -> handoff_1 -> bracket_b1
-        tests -> docs
-        edge [minlen=0]
-        readability -> bracket_a1
-        bracket_b1 -> tests
-    }
-    {
-        rank=same
-        edge [style=invis, minlen=1]
-        correctness_n -> readability_n
-        bracket_a2 -> repeat_a2 -> note_2 -> handoff_2 -> bracket_b2
-        tests_n -> docs_n
-        edge [minlen=0]
-        readability_n -> bracket_a2
-        bracket_b2 -> tests_n
-    }
-
-    bracket_a1:se -> bracket_a2:sw [dir=none]
-    bracket_b1:ne -> bracket_b2:nw [dir=none]
-
-    // Note centered in the free rank between run columns
-    note_1 -> note [color=transparent, dir=none, minlen=1, headlabel="number of runs auto scales with reviewed diff size", labeldistance=0]
-    note -> note_2 [style=invis, minlen=1]
+    handoff_1 [pos="888,164!"]; handoff_2 [pos="-15,164!"]
 
     // Wave A
-    wave_a -> correctness
-    wave_a -> readability
+    wave_a -> correctness [headport=w]
+    wave_a -> readability [headport=w]
     correctness -> correctness_n [style=dotted]
     readability -> readability_n [style=dotted]
-    correctness_n -> judge_a
-    readability_n -> judge_a
+    correctness_n -> judge_a [tailport=e]
+    readability_n -> judge_a [tailport=e]
     judge_a -> user_a
     user_a -> apply_a
-    // Repeat split at waypoints, its label landing between the run and judge columns like wave B's
-    wave_a -> repeat_a1 [style=dashed, dir=back]
-    repeat_a1 -> repeat_a2 [style=dashed, dir=none]
-    repeat_a2 -> repeat_a3 [label="repeat", style=dashed, dir=none]
-    repeat_a3 -> apply_a [style=dashed, dir=none]
+    // Repeat, around the top of the wave
+    edge [style=dashed, dir=none]
+    apply_a -> repeat_a1 [tailport=n]
+    repeat_a1 -> repeat_a2 [label="repeat"]
+    repeat_a2 -> wave_a [headport=n, dir=forward]
 
-    // Hand-off to wave B, declared reversed so dot routes it as a forward edge between the rows
-    wave_b -> handoff_1 [penwidth=2, dir=back]
-    handoff_1 -> handoff_2 [penwidth=2, dir=none]
-    handoff_2 -> apply_a [penwidth=2, dir=none]
+    // Hand-off to wave B, between the rows
+    edge [style="", penwidth=2]
+    apply_a -> handoff_1 [tailport=s]
+    handoff_1 -> handoff_2
+    handoff_2 -> wave_b [headport=n, dir=forward]
 
     // Wave B
-    wave_b -> tests
-    wave_b -> docs
+    edge [penwidth=1, dir=forward]
+    wave_b -> tests [headport=w]
+    wave_b -> docs [headport=w]
     tests -> tests_n [style=dotted]
     docs -> docs_n [style=dotted]
-    tests_n -> judge_b
-    docs_n -> judge_b
+    tests_n -> judge_b [tailport=e]
+    docs_n -> judge_b [tailport=e]
     judge_b -> user_b
     user_b -> apply_b
-    apply_b -> wave_b [label="repeat", style=dashed, constraint=false]
+    // Repeat, around the bottom of the wave
+    edge [style=dashed, dir=none]
+    apply_b -> repeat_b1 [tailport=s]
+    repeat_b1 -> repeat_b2 [label="repeat"]
+    repeat_b2 -> wave_b [headport=s, dir=forward]
 }
