@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the layout of a Graphviz diagram for detached arrows, overlaps and crossings."""
+"""Check the layout of a Graphviz diagram for defects and crossings."""
 
 import argparse
 import itertools
@@ -21,6 +21,14 @@ type Rect = tuple[float, float, float, float]
 ATTACH_TOLERANCE = 1.5
 # Distance from an arrow end within which another arrow meets it rather than crosses it, in points
 END_TOLERANCE = 2.0
+# Smallest angle between an arrowhead and the outline it touches, in degrees
+MIN_ARROWHEAD_ANGLE = 30.0
+# Smallest gap between two arrowheads, in points
+ARROWHEAD_GAP = 2.0
+# Corner radius of rounded boxes, capped at a third of their shorter side, in points
+CORNER_RADIUS = 12.0
+# Node shapes drawn as rectangles
+BOXES = {"box", "rect", "rectangle", "square"}
 # Clearance around a text line, in points
 LABEL_MARGIN = 1.0
 # Text extent below and above its baseline, as fractions of the font size
@@ -46,6 +54,21 @@ class Shape:
 
     name: str
     lines: list[Polyline]
+    # Whether the outline is a box with rounded corners
+    rounded_box: bool = False
+
+
+@dataclass
+class End:
+    """Tail or head of a drawn arrow."""
+
+    # Shape the end attaches to, the node or the frame given by ltail or lhead
+    outline: Shape | None
+    # Point that must touch the outline: the arrowhead tip, or the line end
+    point: Point
+    # Point the arrowhead points from, where it meets the line
+    base: Point
+    arrowhead: list[Polyline]
 
 
 @dataclass
@@ -56,13 +79,14 @@ class Edge:
     tail: int
     head: int
     lines: list[Polyline]
-    arrowheads: list[Polyline]
-    # Shapes the ends attach to, the nodes or the frames given by ltail and lhead
-    tail_outline: Shape | None
-    head_outline: Shape | None
-    # Points that must touch the tail and head outlines: the arrowhead tips, or the line ends
-    tail_end: Point
-    head_end: Point
+    # Tail and head, by name
+    ends: dict[str, End]
+
+    def drawn(self) -> list[Polyline]:
+        """Return the lines of the arrow and of its arrowheads."""
+        return self.lines + [
+            line for end in self.ends.values() for line in end.arrowhead
+        ]
 
 
 @dataclass
@@ -197,6 +221,19 @@ def point_distance(point: Point, segment: Segment) -> float:
     return math.dist(point, (ax + t * dx, ay + t * dy))
 
 
+def gap(a: list[Polyline], b: list[Polyline]) -> float:
+    """Return the distance between two sets of polylines."""
+    if crossings(a, b):
+        return 0.0
+    return min(
+        point_distance(point, segment)
+        for lines, others in ((a, b), (b, a))
+        for line in lines
+        for point in line
+        for segment in segments(others)
+    )
+
+
 def inside(point: Point, lines: list[Polyline]) -> bool:
     """Tell whether a point lies inside one of closed polylines."""
     x, y = point
@@ -210,6 +247,17 @@ def inside(point: Point, lines: list[Polyline]) -> bool:
         if crossed:
             return True
     return False
+
+
+def at_rounded_corner(point: Point, lines: list[Polyline]) -> bool:
+    """Tell whether a point lies in the square at a corner of a rounded box where the rounding is drawn."""
+    xs, ys = zip(*(p for line in lines for p in line))
+    radius = min(CORNER_RADIUS, (max(xs) - min(xs)) / 3, (max(ys) - min(ys)) / 3)
+    # Distances to the nearest vertical and horizontal sides, negative outside
+    return all(
+        -ATTACH_TOLERANCE < min(v - min(vs), max(vs) - v) < radius
+        for v, vs in ((point[0], xs), (point[1], ys))
+    )
 
 
 def center(rect: Rect) -> Point:
@@ -257,7 +305,7 @@ def render(path: Path) -> dict[str, Any]:
 
 
 def check(graph: dict[str, Any]) -> Report:
-    """Find detached arrows, arrows through boxes, overlapping labels and crossings in a laid out graph."""
+    """Find layout defects and arrow crossings in a laid out graph."""
     objects = graph.get("objects", [])
     nodes = {}
     frames = {}
@@ -267,7 +315,9 @@ def check(graph: dict[str, Any]) -> Report:
             lines = trace(visible(o.get("_draw_", [])) + o.get("_ldraw_", []))
             # Nodes drawing no line, like invisible ones or bare text, have none to attach to
             if lines:
-                nodes[i] = Shape(o["name"], lines)
+                styles = o.get("style", "").replace(",", " ").split()
+                rounded_box = o.get("shape") in BOXES and "rounded" in styles
+                nodes[i] = Shape(o["name"], lines, rounded_box)
             # Text within its node's outline is checked with the outline
             labels.extend(
                 Label(f'label "{text}" of {o["name"]}', rect, None if lines else i)
@@ -306,36 +356,66 @@ def check(graph: dict[str, Any]) -> Report:
                 tail=e["tail"],
                 head=e["head"],
                 lines=lines,
-                arrowheads=trace(e.get("_tdraw_", []) + e.get("_hdraw_", [])),
-                tail_outline=frames.get(e.get("ltail")) or nodes.get(e["tail"]),
-                head_outline=frames.get(e.get("lhead")) or nodes.get(e["head"]),
-                tail_end=tips.get("s", spline[0]),
-                head_end=tips.get("e", spline[-1]),
+                ends={
+                    "tail": End(
+                        frames.get(e.get("ltail")) or nodes.get(e["tail"]),
+                        tips.get("s", spline[0]),
+                        spline[0],
+                        trace(visible(e.get("_tdraw_", []))),
+                    ),
+                    "head": End(
+                        frames.get(e.get("lhead")) or nodes.get(e["head"]),
+                        tips.get("e", spline[-1]),
+                        spline[-1],
+                        trace(visible(e.get("_hdraw_", []))),
+                    ),
+                },
             )
         )
 
     defects = []
     for edge in edges:
-        for end, outline, point in (
-            ("tail", edge.tail_outline, edge.tail_end),
-            ("head", edge.head_outline, edge.head_end),
-        ):
-            if not outline:
+        for kind, end in edge.ends.items():
+            if not (outline := end.outline):
                 continue
-            off = min(point_distance(point, s) for s in segments(outline.lines))
+            sides = segments(outline.lines)
+            off = min(point_distance(end.point, s) for s in sides)
             if off > ATTACH_TOLERANCE:
-                defects.append(
-                    f"{edge.name}: {end} {off:.1f}pt off the outline of {outline.name}"
+                corner = outline.rounded_box and at_rounded_corner(
+                    end.point, outline.lines
                 )
+                defects.append(
+                    f"{edge.name}: {kind} {off:.1f}pt off the outline of {outline.name}"
+                    + ", at a rounded corner" * corner
+                )
+            elif end.arrowhead and end.point != end.base:
+                # The base's distance to the outline over the arrowhead's length is the sine
+                # of the angle against a straight side, and follows the outline past the tip
+                clearance = min(point_distance(end.base, s) for s in sides)
+                length = math.dist(end.base, end.point)
+                meeting_angle = math.degrees(math.asin(min(1, clearance / length)))
+                if meeting_angle < MIN_ARROWHEAD_ANGLE:
+                    defects.append(
+                        f"{edge.name}: {kind} meets the outline of {outline.name} at {meeting_angle:.0f}°"
+                    )
         for i, node in nodes.items():
-            if i not in (edge.tail, edge.head) and crossings(
-                edge.lines + edge.arrowheads, node.lines
-            ):
+            if i not in (edge.tail, edge.head) and crossings(edge.drawn(), node.lines):
                 defects.append(f"{edge.name}: passes through {node.name}")
+    # Drawn arrowheads, with the arrow and the end they belong to
+    arrowheads = [
+        (edge, kind, end.arrowhead)
+        for edge in edges
+        for kind, end in edge.ends.items()
+        if end.arrowhead
+    ]
+    pairs = itertools.combinations(arrowheads, 2)
+    for (a, a_kind, a_lines), (b, b_kind, b_lines) in pairs:
+        if gap(a_lines, b_lines) < ARROWHEAD_GAP:
+            defects.append(f"{a.name}: {a_kind} overlaps the {b_kind} of {b.name}")
     for i, label in enumerate(labels):
         for edge in edges:
             if label.node not in (edge.tail, edge.head) and touches(
-                label.rect, edge.lines + edge.arrowheads
+                label.rect, edge.drawn()
             ):
                 defects.append(f"{label.name}: touches {edge.name}")
         for node in nodes.values():
@@ -352,7 +432,7 @@ def check(graph: dict[str, Any]) -> Report:
 
     crossed = []
     for a, b in itertools.combinations(edges, 2):
-        ends = [a.tail_end, a.head_end, b.tail_end, b.head_end]
+        ends = [end.point for edge in (a, b) for end in edge.ends.values()]
         if any(
             min(math.dist(point, end) for end in ends) > END_TOLERANCE
             for point in crossings(a.lines, b.lines)

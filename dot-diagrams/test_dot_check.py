@@ -66,17 +66,79 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(report.defects, [])
 
     def test_rounded_corner(self) -> None:
-        """Report arrow ends on the square corner of a rounded box."""
+        """Report arrow ends on the square corner of a rounded box, naming the corner only there."""
         report = self.check("""
-            node [style=rounded];
-            a [pos="0,0!"]; b [pos="200,100!"];
+            node [style="rounded,filled"];
+            a [pos="0,0!"]; b [pos="200,100!"]; c [pos="0,100!"];
             a -> b [tailport=ne, headport=sw];
+            c -> b [tailclip=false];
         """)
         self.assertEqual(
             without_numbers(report.defects),
             [
-                "a -> b: tail Npt off the outline of a",
-                "a -> b: head Npt off the outline of b",
+                "a -> b: tail Npt off the outline of a, at a rounded corner",
+                "a -> b: head Npt off the outline of b, at a rounded corner",
+                "c -> b: tail Npt off the outline of c",
+            ],
+        )
+
+    def test_shallow_arrowhead(self) -> None:
+        """Report arrowheads, at the head or the tail, meeting their box almost along a side."""
+        report = self.check("""
+            a [pos="0,0!"]; b [pos="200,30!"];
+            a -> b [headport=n];
+            c [pos="0,-200!"]; d [pos="200,-170!"];
+            d -> c [dir=back, tailport=n];
+        """)
+        self.assertEqual(
+            without_numbers(report.defects),
+            [
+                "a -> b: head meets the outline of b at N°",
+                "d -> c: tail meets the outline of d at N°",
+            ],
+        )
+
+    def test_corner_arrowhead(self) -> None:
+        """Measure an arrowhead meeting a square corner against the side it lies along."""
+        report = self.check("""
+            a [pos="400,18!"]; b [pos="200,0!"]; c [pos="0,-18!"];
+            a -> b [headport=ne];
+            c -> b [headport=sw];
+        """)
+        self.assertEqual(report.defects, [])
+
+    def test_collapsed_arrowhead(self) -> None:
+        """Skip the angle of arrowheads drawn at zero size."""
+        report = self.check("""
+            a [pos="0,0!"]; b [pos="200,0!"];
+            a -> b [dir=both, arrowsize=0];
+        """)
+        self.assertEqual(report.defects, [])
+
+    def test_transparent_arrowhead(self) -> None:
+        """Skip arrowheads drawn in a transparent color."""
+        report = self.check("""
+            a [pos="0,0!"]; b [pos="200,30!"];
+            a -> b [headport=n, color="transparent:red"];
+        """)
+        self.assertEqual(report.defects, [])
+
+    def test_arrowheads_overlap(self) -> None:
+        """Report arrowheads drawn over or against each other, but neither close ones still apart nor arrows starting from the same point."""
+        report = self.check("""
+            a [pos="160,0!"]; b [pos="0,90!"]; c [pos="250,90!"];
+            b -> c; a -> c [headport=w];
+            b -> a [tailport=e];
+            d [pos="0,-200!"]; e [pos="0,-280!"]; f [pos="300,-240!"];
+            d -> f; e -> f;
+            g [pos="0,-400!"]; h [pos="84,-400!"];
+            g -> h [dir=both, arrowsize=2];
+        """)
+        self.assertEqual(
+            report.defects,
+            [
+                "a -> c: head overlaps the head of b -> c",
+                "g -> h: tail overlaps the head of g -> h",
             ],
         )
 
