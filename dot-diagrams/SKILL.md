@@ -44,6 +44,7 @@ Show the user a diagram once `dot-check` reports no defects, or say which remain
 - Graphviz ends an arrow on a node's polygon, even where the drawing departs from it: the corners of `style=rounded` boxes, the fold of a `note`. An arrow landing near such a corner stops short of the line.
 - `samehead` and `sametail` on `constraint=false` edges can start or end an arrow away from its node.
 - `dot` places nodes in rows and columns of its own. When they are not the ones you want, pin positions by hand with `neato` rather than piling up `dot` workarounds: `layout=neato`, `inputscale=72` for positions in points, `pos="x,y!"` on every node, `splines=line`. Then:
+  - `Layout type: "neato" not recognized` means its plugin is missing: Debian and Ubuntu ship it in its own package, `libgvplugin-neato-layout8`, for the user to install.
   - A frame hugs its nodes and its title lands on them: widen it with an invisible node in its corner.
   - Nested frames are not drawn.
   - A `label` or `xlabel` on a sloped arrow may be drawn across it: place it with `taillabel`, `labelangle` and `labeldistance` instead.
