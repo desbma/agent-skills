@@ -36,6 +36,7 @@ Show the user a diagram once `dot-check` reports no defects, or say which remain
 - Draw the nodes the user agreed on. When the layout would read better with nodes added, merged or duplicated, propose it rather than doing it.
 - Labels are a few words. Label an edge only when its meaning is not obvious.
 - Give each node role its own style. Add a legend only as a last resort.
+- Draw boxes with rounded corners: set `node [shape=box, style=rounded]` once at the top of the file. A node or role that sets its own `style` replaces the whole list, so repeat `rounded` in it, as in `style="rounded,filled"`.
 - Keep fonts and text sizes the same across the project's diagrams. Use the Graphviz default font and size unless the context needs others, then set them once at the top of the file, not on single nodes or edges.
 
 ## Graphviz behavior
