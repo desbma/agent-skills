@@ -94,6 +94,6 @@ Every verdict names an action to take. You never hand a choice back: a `your cal
 
 `agree` is therefore not an answer on a `your call` item, naming no action there. Pick one of its lettered options, or, when no option offered is right, name the verdict to take instead.
 
-`disagree, apply` on an item already proposed `apply`, and `disagree, decline` on one already proposed `decline`, are contradictions: those two verdicts carry no action of their own, so the same verdict cannot be a departure.
+Never write `disagree, apply` on an item already proposed `apply`, nor `disagree, decline` on one already proposed `decline`.
 
 Write no callout markers, no `:::` lines and no headings. The block above is the whole format.

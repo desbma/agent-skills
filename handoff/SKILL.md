@@ -19,7 +19,7 @@ Write them in the handoff dir, named `handoff-<date>[-<rank>]-<slug>.md`. `<date
 
 When some paths depend on others, every document carries a `<rank>`, its position in an order that handles each path after those it depends on. Fixes for a missing index, a login crash, a login timeout and a logout redirect, where the two login fixes share a commit that needs the index and the redirect fix builds on them, give `handoff-202610061430-1-add-session-index.md`, `handoff-202610061430-2-fix-login-crash-and-timeout.md` and `handoff-202610061430-3-fix-logout-redirect.md`. When all paths are independent, the documents carry no rank.
 
-When a document for the path already exists, whatever its rank, update it in place only while its path holds work left to do: it has to hold the state of the code and of the proposal as they stand now, so an agent resuming from it never works from a stale one. Once the change it describes is implemented, do not update it; ask the user whether to delete it instead. When its rank changes, rename it, and update the pointers its siblings hold to it.
+When a document for the path already exists, whatever its rank, update it in place to the state of the code and of the proposal as they stand now, but only while its path holds work left to do. Once the change it describes is implemented, do not update it; ask the user whether to delete it instead. When its rank changes, rename it, and update the pointers its siblings hold to it.
 
 When you are done, give the user one line per document, in rank order: its absolute path, and what it carries in a few words.
 

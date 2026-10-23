@@ -12,7 +12,7 @@ Review the Jujutsu changes for the target revision with external reviewer agents
 
 Each domain maps to an item id prefix: `correctness` → `C`, `readability` → `R`, `tests` → `T`, `docs` → `D`.
 
-By default, a wave runs two domains in parallel: phase A waves run correctness and readability, phase B waves run tests and docs. The split keeps the domains that change production code apart from those that follow it. The loop's first wave runs phase A, or all four domains at once on a revision small enough that every chain is capped at one run: there, the split would cost a whole wave round to protect very little code. The loop then moves between phases as the user decides at the end of each wave.
+By default, a wave runs two domains in parallel: phase A waves run correctness and readability, phase B waves run tests and docs. The loop's first wave runs phase A, or all four domains at once on a revision small enough that every chain is capped at one run. The loop then moves between phases as the user decides at the end of each wave.
 
 A wave can also run any set of domains: `review init` takes a comma separated domain list in place of the phase letter, and the wave then runs exactly the domains it names. Read the user's request for a wave this way:
 
@@ -21,7 +21,7 @@ A wave can also run any set of domains: `review init` takes a comma separated do
 - "Repeat" runs the previous wave's domains again.
 - On a later wave, a request naming none of these — "another pass" — is ambiguous: ask which domains to run.
 
-Compose a wave by hand only on the user's request: one crossing the split reviews tests and docs against code its own correctness items may still change.
+Compose a wave by hand only on the user's request.
 
 The `review` script settles the rest of a wave's configuration on its own: it resolves the revision, numbers the wave, and caps every chain — the code domains from the number of lines the revision adds, tests and docs at one run, one run fewer, never below one, on a domain an earlier wave already ran. Three flags of `review init` carry what the user asked for, in the wording of their request:
 
@@ -49,7 +49,7 @@ Items are numbered with the domain prefix and a counter continuous across the wh
 
 The claim judges the item as the reviewer wrote it — whether its diagnosis survives reading the code, and how severe what survives is — and nothing else. It never carries a course of action. Assessing an item again replaces its assessment, until the item is decided.
 
-The severity follows the claim: the reviewer's own, kept when it stands, replaced when it does not, the analysis then saying what moved it. Rate it against the `## Severity` sections of `<SKILL_DIR>/../review-common.md` and of the item's domain skill, `<SKILL_DIR>/../review-<domain>/SKILL.md`, reading only those sections. State it on every item rather than let silence stand for agreement; the reviewer's own stays visible in the quoted item, so a downgrade reads as a disagreement and not as an erasure. A `partly-holds` item is rated on what survives, not on what the reviewer claimed. `does-not-hold` is the one exception: no defect survives, so there is nothing to rate.
+The severity follows the claim: the reviewer's own, kept when it stands, replaced when it does not, the analysis then saying what moved it. Rate it against the `## Severity` sections of `<SKILL_DIR>/../review-common.md` and of the item's domain skill, `<SKILL_DIR>/../review-<domain>/SKILL.md`, reading only those sections. State it on every item rather than let silence stand for agreement. A `partly-holds` item is rated on what survives, not on what the reviewer claimed. `does-not-hold` is the one exception: no defect survives, so there is nothing to rate.
 
 The proposal carries the course of action, never empty:
 
@@ -64,7 +64,7 @@ The delta an `apply-with-changes` carries is counted, not carried over: the item
 
 On an `apply` the item's estimate stands, and the tail is a revision of that estimate, counted the same way: give the tail only when your own count differs, the analysis then saying what moved it. Silence there is agreement, so count before staying silent.
 
-The severity is what makes a `decline` legible. Declining a `minor` item needs no defense; declining a `critical` one has to name what outweighs it, and when nothing does, the severity was wrong.
+Declining a `minor` item needs no defense; declining a `critical` one has to name what outweighs it, and when nothing does, the severity was wrong.
 
 The decision is added once the user has picked, exactly one per item, its reasoning never empty. Deciding an item again replaces its decision. `applied-with-changes` means the applied change departs from the item as the reviewer wrote it, whoever asked for the departure. Taking the proposal as offered maps verdict for verdict: `apply` to `applied`, `apply-with-changes` to `applied-with-changes`, `decline` to `declined`. A `your-call` item, or a pick that overrides the proposal, takes the verdict the user's choice actually produced.
 
@@ -85,7 +85,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    <SKILL_DIR>/review summary run <WAVE_REPORT>
    ```
 
-   The summary describes the change the wave reviews, in prose an external agent writes. It lands in the report at step 4, which refuses a wave whose summary is missing or still running. Do not open its capture: it is written for the user, and says nothing the reviewed diff does not.
+   The summary describes the change the wave reviews, in prose an external agent writes. It lands in the report at step 4, which refuses a wave whose summary is missing or still running. Do not open its capture.
 
 2. Print the header:
 
@@ -154,7 +154,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    EOF
    ```
 
-   Run it again for an item whose decision changes later: it replaces the decision. Never open or show the annotated report — it only records decisions the user has just made, from a report they already have.
+   Run it again for an item whose decision changes later: it replaces the decision. Never open or show the annotated report.
 
 8. Summarize the wave — what the user decided, and what the applied changes touched — then ask once which move comes next: repeat the domains this wave ran, or move to the ones it left out, named as phases when the wave ran a phase. A wave that ran every domain leaves only the repeat to offer. Ending the loop is not offered as a third: it is what happens when no wave is asked for.
 

@@ -150,7 +150,7 @@ Steps:
 - for each workflow in `https://github.com/desbma/cargo-template/tree/master/.github/workflows`, if it exists locally, compare them and consider updating the local version:
   - if a job exists in the reference action, but does not make sense locally (MSRV check when the local project declares no MSRV) => ignore it
   - for the `release` workflow, only update jobs existing locally, do not add new ones
-  - do not make changes that affect the output (e.g. compilation toolchains, library packages installed), as it is highly project specific
+  - do not make changes that affect the output (e.g. compilation toolchains, library packages installed)
   - ignore the `untemplate` line noise, it is an artifact of the `cargo-generate` use
   - if a check is in the reference action, and not in the local one, or is more thorough in the reference (e.g. runs Clippy on test code and the local project has tests) **and** it makes sense to use such command locally (for example it is not needed to run `cargo test --all-features` if local project has no features) => add it
 - run `pinact run -u --min-age 10` to update GitHub actions versions, and pin them with hashes

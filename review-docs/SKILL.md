@@ -16,7 +16,7 @@ Follow the common review instructions: @../review-common.md
 Documentation covers:
 
 - `AGENTS.md`, `README.md`, and any other documentation file
-- diagrams and schemas, which describe a structure or a flow the change may have altered
+- diagrams and schemas
 - code comments and docstrings
 
 ## Main goals

@@ -13,7 +13,7 @@ Follow the common review instructions: @../review-common.md
 
 ## Main goals
 
-The leading goal is to reduce the code's line count: fewer lines to read and maintain. A small increase is fine when it buys a worthwhile readability, maintainability, or consistency gain; when the trade-off is roughly even, favor fewer lines.
+The leading goal is to reduce the code's line count. A small increase is fine when it buys a worthwhile readability, maintainability, or consistency gain; when the trade-off is roughly even, favor fewer lines.
 
 Keeping that as the primary goal, also make the code:
 

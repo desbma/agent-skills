@@ -26,7 +26,7 @@ Derive the label used to find previous review files:
 jj log -r <JJ_REVISION> --no-graph -T 'change_id.short(8)'
 ```
 
-Its output is `<REVIEW_REVISION>`, a per-change identifier stable across amends, repo growth, and jj config. Use it only to match review filenames, never as a jj revision.
+Its output is `<REVIEW_REVISION>`. Use it only to match review filenames, never as a jj revision.
 
 Focus on the current diff, but do not limit the review to the changed code; related code can be reviewed too when needed.
 
@@ -79,7 +79,7 @@ For each item:
   **Estimated delta**: 0 lines
   ````
 
-The references save the reader a search: the file and the lines the item turns on, one per place when it spans several. An item with no definite site — documentation a change never wrote, a pattern spread across the revision — carries the title alone, without the em dash.
+The references give the file and the lines the item turns on, one per place when it spans several. An item with no definite site — documentation a change never wrote, a pattern spread across the revision — carries the title alone, without the em dash.
 
 The estimate covers everything the item asks for, tests included, and carries its sign: `-8 lines`, `+3 lines`, `0 lines`. A range, and a short qualifier saying where the lines go, are both fine: `+8 to 15 lines including a regression test`.
 
