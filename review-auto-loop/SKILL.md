@@ -60,9 +60,9 @@ The proposal carries the course of action, never empty:
 
 The two are independent. An item whose claim holds still gets `decline` when the fix costs more than the flaw it closes; one whose claim does not hold still gets `apply-with-changes` when checking it uncovered a different, real change. Outside `your-call` the proposal never hedges: "worth doing, or skip" is not a proposal, it is `apply-with-changes` or `your-call`.
 
-The delta an `apply-with-changes` carries is counted, not carried over: the item's own estimate covers the fix the reviewer wrote, and the proposal is a different change. Count that change against the code as it stands, tests included, as one net line count: the lines it adds minus those it removes. A change rewriting lines in place counts `0`. A `your-call` option that departs from the item states its delta the same way, inside the option's text.
+The delta an `apply-with-changes` carries is counted, not carried over: the item's own estimate covers the fix the reviewer wrote, and the proposal is a different change. Count that change against the code as it stands, as two net line counts, production and tests, each the lines it adds minus those it removes. Test code is test files and modules, inline test blocks such as Rust `#[cfg(test)]` modules, fixtures and test data; everything else is production, documentation files included. A comment counts with the code it sits in. A change rewriting lines in place counts `0`. A `your-call` option that departs from the item states both counts the same way, inside the option's text: `production +3 lines, tests 0 lines`.
 
-On an `apply` the item's estimate stands, and the tail is a revision of that estimate, counted the same way: give the tail only when your own count differs, the analysis then saying what moved it. Silence there is agreement, so count before staying silent.
+On an `apply` the item's estimate stands, and the tail is a revision of that estimate, counted the same way and restating both counts: give the tail only when either of your own counts differs, the analysis then saying what moved it. Silence there is agreement, so count before staying silent.
 
 Declining a `minor` item needs no defense; declining a `critical` one has to name what outweighs it, and when nothing does, the severity was wrong.
 
@@ -110,8 +110,8 @@ The decision is added once the user has picked, exactly one per item, its reason
 
    ```bash
    <SKILL_DIR>/review item assess <WAVE_REPORT> C3 holds major apply
-   <SKILL_DIR>/review item assess <WAVE_REPORT> C4 holds major apply -8
-   <SKILL_DIR>/review item assess <WAVE_REPORT> R2 partly-holds minor apply-with-changes +3 '<what to do instead>'
+   <SKILL_DIR>/review item assess <WAVE_REPORT> C4 holds major apply --delta-lines-prod -8 --delta-lines-tests +12
+   <SKILL_DIR>/review item assess <WAVE_REPORT> R2 partly-holds minor apply-with-changes --delta-lines-prod +3 --delta-lines-tests 0 '<what to do instead>'
    <SKILL_DIR>/review item assess <WAVE_REPORT> R5 does-not-hold decline '<why not>'
    <SKILL_DIR>/review item assess <WAVE_REPORT> T1 holds minor your-call '<one option>' '<another>'
    ```

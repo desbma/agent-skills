@@ -53,7 +53,7 @@ ONE_ITEM = """\
    ensure!(stack.len() <= MAX, "too many layers");
    ```
 
-   **Estimated delta**: +8 lines
+   **Estimated delta**: production +8 lines, tests +6 lines
 """
 
 CAPTURE = f"""\
@@ -72,21 +72,19 @@ Reviewing the changes.
 
    Delete it.
 
-   **Estimated delta**: -12 lines
+   **Estimated delta**: production -12 lines, tests 0 lines
 """
 
 SUMMARY = "The change bounds the layer walk, and drops a branch nothing reaches.\n"
 DIFF = "Author: A\n\n    bound the walk\n\nM src/build.rs\n"
 
 ISSUE, CHANGE = "**Issue**:\n\nprose", "**Proposed change**:\n\nprose"
-GOOD_ITEM = (
-    f"**T** — `a.py:1`\n\n**Severity**: major\n\n{ISSUE}\n\n{CHANGE}\n\n"
-    "**Estimated delta**: +1 lines"
-)
+DELTA = "**Estimated delta**: production +4 lines, tests +2 lines"
+GOOD_ITEM = f"**T** — `a.py:1`\n\n**Severity**: major\n\n{ISSUE}\n\n{CHANGE}\n\n{DELTA}"
 SECOND_FINDING = (
     "**Drop the unused branch** — `src/read.rs:20`\n\n**Severity**: minor\n\n"
     "**Issue**:\n\nNothing reaches it.\n\n**Proposed change**:\n\nDelete it.\n\n"
-    "**Estimated delta**: -1 lines\n"
+    "**Estimated delta**: production -1 lines, tests 0 lines\n"
 )
 DISTINCT_REVIEWERS = {
     domain: review.Reviewer(f"model-{domain}", f"effort-{domain}", f"Model {domain}")
@@ -107,7 +105,9 @@ class RawReviewTest(unittest.TestCase):
         self.assertTrue(item.startswith("**Bound the layer walk** — `src/build.rs"))
         self.assertIn("\n**Severity**: major\n", item)
         self.assertIn("\n```rust\n", item)
-        self.assertTrue(item.endswith("**Estimated delta**: +8 lines"))
+        self.assertTrue(
+            item.endswith("**Estimated delta**: production +8 lines, tests +6 lines")
+        )
 
     def test_nested_numbers_are_not_items(self) -> None:
         """Keep a numbered list inside an item from opening one."""
@@ -141,9 +141,9 @@ class RawReviewTest(unittest.TestCase):
             GOOD_ITEM.replace(f"{CHANGE}\n\n", ""),
             GOOD_ITEM.replace(ISSUE, "**Issue**:\nprose"),
             GOOD_ITEM.replace(CHANGE, "**Proposed change**:\nprose"),
-            GOOD_ITEM.replace("\n\n**Estimated delta**: +1 lines", ""),
+            GOOD_ITEM.replace(f"\n\n{DELTA}", ""),
             GOOD_ITEM.replace("\n\n**Estimated delta**", "\n**Estimated delta**"),
-            GOOD_ITEM.replace("+1 lines", "bananas"),
+            GOOD_ITEM.replace(DELTA, "**Estimated delta**: bananas"),
             GOOD_ITEM.replace(ISSUE, "**Issue**:"),
             GOOD_ITEM.replace(CHANGE, "**Proposed change**:"),
             f"{GOOD_ITEM}\n\n{SECOND_FINDING}",
@@ -152,15 +152,54 @@ class RawReviewTest(unittest.TestCase):
                 review.check_reviewer_item(broken, capture, 1)
 
     def test_format_checks_accept_every_delta_form(self) -> None:
-        """Accept a zero count, a singular unit, a range carrying a qualifier, and a qualifier ahead of the count."""
+        """Accept a production count then a test count, each under its own label, whatever the wording around them."""
         capture = Path("run1.md")
         for delta in (
-            "0 lines",
-            "-1 line",
-            "+8 to 15 lines including a regression test",
-            "about -8 lines",
+            "production -8 lines, tests +12 lines",
+            "production 0 lines, tests 0 lines",
+            "production -1 line, tests +1 line",
+            "production +8 to 15 lines, tests +10 to 20 lines",
+            "production about -8 lines, tests about +5 lines",
+            "production ~-8 lines, tests +12 lines",
+            "production −8 lines, tests +12 lines",
+            "production +3 lines in the parser, the loop and the lexer, tests +10 lines",
+            "production -8 lines, tests +12 lines including a regression test",
+            "production +2 lines moving the tests helper, tests +10 lines",
+            "production: -8 lines; tests: +12 lines",
+            "Production -8 lines, Tests +12 lines",
+            "production -8 lines, test +12 lines",
         ):
-            review.check_reviewer_item(GOOD_ITEM.replace("+1 lines", delta), capture, 1)
+            with self.subTest(delta=delta):
+                review.check_reviewer_item(
+                    GOOD_ITEM.replace(DELTA, f"**Estimated delta**: {delta}"),
+                    capture,
+                    1,
+                )
+
+    def test_format_checks_refuse_every_other_delta_form(self) -> None:
+        """Refuse an estimate not giving a production count then a test count, each under its own label."""
+        capture = Path("run1.md")
+        for delta in (
+            "prod -8 lines, tests +12 lines",
+            "-8 lines",
+            "0 lines",
+            "+8 to 15 lines including a regression test",
+            "+20 lines, tests included",
+            "+8 to 15 lines, tests +5 lines",
+            "production +3 lines, including 2 lines in tests",
+            "production -8 lines",
+            "production -8 lines, tests none",
+            "tests +12 lines, production -8 lines",
+            "products +3 lines, tests +1 line",
+            "production not estimated, tests +12 lines (test fixtures +4 lines)",
+            "production 0, tests +12 lines (test fixtures +4 lines)",
+        ):
+            with self.subTest(delta=delta), self.assertRaises(SystemExit):
+                review.check_reviewer_item(
+                    GOOD_ITEM.replace(DELTA, f"**Estimated delta**: {delta}"),
+                    capture,
+                    1,
+                )
 
     def test_format_checks_name_the_form_they_want(self) -> None:
         """Report a label written in another shape as the form the item lacks, not as a missing block."""
@@ -172,7 +211,7 @@ class RawReviewTest(unittest.TestCase):
             (
                 "**Estimated delta**:",
                 "**Estimated delta:**",
-                "**Estimated delta**: <count> lines",
+                "**Estimated delta**: production <count> lines, tests <count> lines",
             ),
         ):
             with self.assertRaises(SystemExit) as caught:
@@ -182,12 +221,12 @@ class RawReviewTest(unittest.TestCase):
     def test_format_checks_read_the_labels_outside_fences(self) -> None:
         """Take a label inside a fenced sample as neither the item's own nor a substitute for it."""
         capture = Path("run1.md")
-        fence = "```markdown\n**Issue**:\n\n**Estimated delta**: +1 lines\n```"
+        fence = f"```markdown\n**Issue**:\n\n{DELTA}\n```"
         sample = GOOD_ITEM.replace(CHANGE, f"**Proposed change**:\n\n{fence}")
         review.check_reviewer_item(sample, capture, 1)
         for broken in (
             sample.replace(f"{ISSUE}\n\n", ""),
-            sample.removesuffix("\n\n**Estimated delta**: +1 lines"),
+            sample.removesuffix(f"\n\n{DELTA}"),
         ):
             with self.assertRaises(SystemExit):
                 review.check_reviewer_item(broken, capture, 1)
@@ -349,8 +388,8 @@ class AssessHelpTest(unittest.TestCase):
         rated = "{critical,major,minor}"
         claims = (f"holds {rated}", f"partly-holds {rated}", "does-not-hold")
         proposals = (
-            "apply [DELTA]",
-            "apply-with-changes DELTA ACTION",
+            "apply [--delta-lines-prod LINES] [--delta-lines-tests LINES]",
+            "apply-with-changes --delta-lines-prod LINES --delta-lines-tests LINES ACTION",
             "decline REASON",
             "your-call OPTION OPTION [OPTION ...]",
         )
@@ -464,9 +503,13 @@ class DeltaTextTest(unittest.TestCase):
     """Line counts as a proposal states them."""
 
     def test_it_signs_every_count_but_zero(self) -> None:
-        """Sign every count but zero, and follow its magnitude with the unit."""
-        for delta, rendered in ((4, "+4 lines"), (-1, "-1 line"), (0, "0 lines")):
-            self.assertEqual(review.delta_text(delta), rendered)
+        """Name the production count then the test count, signing each unless it is zero and following its magnitude with the unit."""
+        for production, tests, rendered in (
+            (4, -1, "production +4 lines, tests -1 line"),
+            (0, 1, "production 0 lines, tests +1 line"),
+            (-1, 0, "production -1 line, tests 0 lines"),
+        ):
+            self.assertEqual(review.delta_text(production, tests), rendered)
 
 
 class LetteredOptionsTest(unittest.TestCase):
@@ -1135,7 +1178,10 @@ class WaveTest(WaveFixture):
         self.capture("correctness", 1)
         out = self.assess(
             self.imported("correctness")[0],
+            "--delta-lines-prod",
             3,
+            "--delta-lines-tests",
+            4,
             "bound it in the caller",
             claim="partly-holds",
             severity="minor",
@@ -1147,19 +1193,30 @@ class WaveTest(WaveFixture):
         self.assertIn(
             "**Claim**: partly holds, minor\n\n**Analysis**:\n\n"
             "Only the retry path can overrun it.\n\n"
-            "**Proposal**: apply with changes — bound it in the caller (+3 lines)\n",
+            "**Proposal**: apply with changes — bound it in the caller "
+            "(production +3 lines, tests +4 lines)\n",
             text,
         )
 
     def test_assess_revises_the_estimate_of_an_apply(self) -> None:
-        """Take a delta on an apply only as a revision of the item's estimate."""
+        """Take a delta on an apply only as a revision of the item's estimate, a revision to zero included."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
-        self.assess(identifier, -2, stdin="The item over-counts its own fix.")
-        self.assertIn(
-            "**Proposal**: apply (revised estimate: -2 lines)",
-            self.report.read_text(),
-        )
+        for production, rendered in ((-2, "-2 lines"), (0, "0 lines")):
+            with self.subTest(production=production):
+                self.assess(
+                    identifier,
+                    "--delta-lines-prod",
+                    production,
+                    "--delta-lines-tests",
+                    0,
+                    stdin="The item over-counts its own fix.",
+                )
+                self.assertIn(
+                    "**Proposal**: apply (revised estimate: "
+                    f"production {rendered}, tests 0 lines)",
+                    self.report.read_text(),
+                )
 
     def test_assess_overwrites_and_keeps_the_quote(self) -> None:
         """Assessing twice replaces the assessment and leaves the quoted item alone."""
@@ -1303,9 +1360,31 @@ class WaveTest(WaveFixture):
             ["holds", "apply"],
             ["does-not-hold", "minor", "decline", "x"],
             ["holds", "minor", "apply", "x"],
+            ["holds", "minor", "apply", "-8"],
+            ["holds", "minor", "apply", "--delta-lines-prod", "-8"],
+            ["holds", "minor", "apply", "--delta-lines-tests", "+12"],
+            [
+                "holds",
+                "minor",
+                "apply",
+                "--delta-lines-prod",
+                "x",
+                "--delta-lines-tests",
+                "0",
+            ],
             ["holds", "minor", "apply-with-changes"],
-            ["holds", "minor", "apply-with-changes", "3"],
-            ["holds", "minor", "apply-with-changes", "x", "3"],
+            ["holds", "minor", "apply-with-changes", "3", "x"],
+            ["holds", "minor", "apply-with-changes", "--delta-lines-prod", "3", "x"],
+            ["holds", "minor", "apply-with-changes", "--delta-lines-tests", "3", "x"],
+            [
+                "holds",
+                "minor",
+                "apply-with-changes",
+                "--delta-lines-prod",
+                "3",
+                "--delta-lines-tests",
+                "0",
+            ],
             ["holds", "minor", "decline"],
             ["holds", "minor", "your-call", "a"],
             ["holds", "minor", "your-call", "a", "3"],
@@ -1423,7 +1502,10 @@ class WaveTest(WaveFixture):
         self.assess(first)
         self.assess(
             second,
+            "--delta-lines-prod",
             3,
+            "--delta-lines-tests",
+            0,
             "bound it in the caller",
             claim="partly-holds",
             proposal="apply-with-changes",
@@ -1485,7 +1567,14 @@ class WaveTest(WaveFixture):
         """Format, index, recap and decide an apply carrying a revised estimate like a bare one."""
         self.complete_wave()
         first, second = self.imported("correctness")
-        self.assess(first, -2, stdin="The item over-counts its own fix.")
+        self.assess(
+            first,
+            "--delta-lines-prod",
+            -2,
+            "--delta-lines-tests",
+            0,
+            stdin="The item over-counts its own fix.",
+        )
         self.assess(second, stdin="The estimate covers it.")
         recap = self.run_cli("report", "format", self.report)
         self.assertEqual(recap, "2 items · 2 apply\n\n- apply: C1, C2\n")

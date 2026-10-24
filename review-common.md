@@ -57,7 +57,7 @@ For each item:
 - follow it with the severity, in a paragraph of its own: `**Severity**: critical`, `**Severity**: major` or `**Severity**: minor`
 - state what is wrong under `**Issue**:`, alone in a paragraph of its own, with the prose and any snippet of the current code below it
 - state what to do under `**Proposed change**:`, alone in a paragraph of its own too, with the prose and the code snippets that show it below; when the item rewrites existing code, showing it as a before/after pair is encouraged, as it reads better than the proposed code alone — use it where it helps, not for items that only add code
-- close it with the estimated line count delta, in a paragraph of its own after any code snippet
+- close it with the estimated line count delta of production code, then of tests, in a paragraph of its own after any code snippet
 
   ````markdown
   **Make the shared run timestamp timezone-independent** — `tests/support.py:18-19`
@@ -76,12 +76,12 @@ For each item:
   NOW = datetime.datetime.now(datetime.UTC)
   ```
 
-  **Estimated delta**: 0 lines
+  **Estimated delta**: production 0 lines, tests 0 lines
   ````
 
 The references give the file and the lines the item turns on, one per place when it spans several. An item with no definite site — documentation a change never wrote, a pattern spread across the revision — carries the title alone, without the em dash.
 
-The estimate covers everything the item asks for, tests included, and carries its sign: `-8 lines`, `+3 lines`, `0 lines`. A range, and a short qualifier saying where the lines go, are both fine: `+8 to 15 lines including a regression test`.
+The estimate covers everything the item asks for as two net line counts, each the lines added minus those removed and carrying its sign. Give both, production first, a zero one included: `production -8 lines, tests +12 lines`, `production +3 lines, tests 0 lines`. Test code is test files and modules, inline test blocks such as Rust `#[cfg(test)]` modules, fixtures and test data; everything else is production, documentation files included. A comment counts with the code it sits in. A range, and a short qualifier saying where the lines go, are both fine: `production +8 to 15 lines, tests +12 lines including a regression test`.
 
 Order items by decreasing impact.
 

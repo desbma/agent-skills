@@ -128,12 +128,21 @@ ITEM_TITLE_RE = re.compile(r"\*\*[^*]+\*\*")
 ITEM_SEVERITY_RE = re.compile(r"\*\*Severity\*\*: (critical|major|minor)\s*$")
 ITEM_ISSUE_RE = re.compile(r"\*\*Issue\*\*:\s*$")
 ITEM_PROPOSED_CHANGE_RE = re.compile(r"\*\*Proposed change\*\*:\s*$")
-ITEM_DELTA_RE = re.compile(r"\*\*Estimated delta\*\*: \D*\d.*\blines?\b")
+NOT_TESTS = r"(?!\b(?i:tests?)\b)"
+DELTA_FIGURE = rf"(?:{NOT_TESTS}\D)*?\d(?:{NOT_TESTS}.)*?\blines?\b"
+ITEM_DELTA_RE = re.compile(
+    rf"\*\*Estimated delta\*\*: (?i:production)\b{DELTA_FIGURE}.*\b(?i:tests?)\b{DELTA_FIGURE}"
+)
 ITEM_LABELS = (
     ("severity", ITEM_SEVERITY_RE, "**Severity**: <critical, major or minor>", False),
     ("issue", ITEM_ISSUE_RE, "**Issue**:", True),
     ("proposed change", ITEM_PROPOSED_CHANGE_RE, "**Proposed change**:", True),
-    ("estimated delta", ITEM_DELTA_RE, "**Estimated delta**: <count> lines", False),
+    (
+        "estimated delta",
+        ITEM_DELTA_RE,
+        "**Estimated delta**: production <count> lines, tests <count> lines",
+        False,
+    ),
 )
 FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})")
 ATX_HEADING_RE = re.compile(r" {0,3}#{1,6}(?:[ \t]+|$)")
@@ -1490,23 +1499,32 @@ def lettered_options(args: argparse.Namespace) -> list[str]:
     ]
 
 
-def delta_text(delta: int) -> str:
+def count_text(lines: int) -> str:
     """Render a line count, signed unless it is zero."""
-    count = f"{delta:+d}" if delta else "0"
-    return f"{count} line" if abs(delta) == 1 else f"{count} lines"
+    count = f"{lines:+d}" if lines else "0"
+    return f"{count} line" if abs(lines) == 1 else f"{count} lines"
+
+
+def delta_text(production: int, tests: int) -> str:
+    """Render a delta as its production line count, then its test line count."""
+    return f"production {count_text(production)}, tests {count_text(tests)}"
 
 
 def proposal_lines(args: argparse.Namespace) -> list[str]:
     """Render the proposal: its verdict, then the tail that verdict takes."""
     if args.proposal is Proposal.APPLY:
-        if args.delta is None:
+        counts = (args.delta_lines_prod, args.delta_lines_tests)
+        if counts == (None, None):
             return [f"**Proposal**: {args.proposal}"]
-        revised = f"revised estimate: {delta_text(args.delta)}"
+        if None in counts:
+            raise SystemExit(
+                "A revised estimate gives both --delta-lines-prod and --delta-lines-tests"
+            )
+        revised = f"revised estimate: {delta_text(*counts)}"
         return [f"**Proposal**: {args.proposal} ({revised})"]
     if args.proposal is Proposal.APPLY_WITH_CHANGES:
-        return [
-            f"**Proposal**: {args.proposal} — {args.action} ({delta_text(args.delta)})"
-        ]
+        delta = delta_text(args.delta_lines_prod, args.delta_lines_tests)
+        return [f"**Proposal**: {args.proposal} — {args.action} ({delta})"]
     if args.proposal is Proposal.DECLINE:
         return [f"**Proposal**: {args.proposal} — {args.reason}"]
     return [
@@ -1928,19 +1946,28 @@ def build_parser() -> argparse.ArgumentParser:
             offer = proposals.add_parser(token(proposal))
             offer.set_defaults(proposal=proposal)
             if proposal is Proposal.APPLY:
-                offer.add_argument(
-                    "delta",
-                    metavar="DELTA",
-                    nargs="?",
-                    type=int,
-                    help="Net lines the item's fix comes to, added minus removed, when the item's estimate is wrong",
+                add_count = functools.partial(
+                    offer.add_argument, metavar="LINES", type=int
+                )
+                add_count(
+                    "--delta-lines-prod",
+                    help="Net production lines the item's fix comes to, added minus removed, when the item's estimate is wrong",
+                )
+                add_count(
+                    "--delta-lines-tests",
+                    help="Net test lines the item's fix comes to, added minus removed, when the item's estimate is wrong",
                 )
             elif proposal is Proposal.APPLY_WITH_CHANGES:
-                offer.add_argument(
-                    "delta",
-                    metavar="DELTA",
-                    type=int,
-                    help="Net lines that change comes to, added minus removed, against the code as it stands",
+                add_count = functools.partial(
+                    offer.add_argument, metavar="LINES", type=int, required=True
+                )
+                add_count(
+                    "--delta-lines-prod",
+                    help="Net production lines that change comes to, added minus removed, against the code as it stands",
+                )
+                add_count(
+                    "--delta-lines-tests",
+                    help="Net test lines that change comes to, added minus removed, against the code as it stands",
                 )
                 offer.add_argument(
                     "action", metavar="ACTION", help="What to do instead"
