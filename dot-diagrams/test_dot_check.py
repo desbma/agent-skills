@@ -2,6 +2,7 @@
 """Tests for the diagram layout checker."""
 
 import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -9,14 +10,19 @@ import tempfile
 import unittest
 from importlib.machinery import ModuleSpec, SourceFileLoader
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("dot-check")
 _loader = SourceFileLoader("dot_check", str(SCRIPT))
 dot_check = importlib.util.module_from_spec(ModuleSpec("dot_check", _loader))
 _loader.exec_module(dot_check)
 
-# Pinned layout, positions in points
-HEADER = "layout=neato; inputscale=72; splines=line; node [shape=box];"
+# Pinned layout, positions in points, in the font the skill sets
+HEADER = (
+    "layout=neato; inputscale=72; splines=line; node [shape=box];"
+    'fontname="DejaVu Sans,sans-serif"; node [fontname="DejaVu Sans,sans-serif"];'
+    'edge [fontname="DejaVu Sans,sans-serif"];'
+)
 
 
 def without_numbers(lines: list[str]) -> list[str]:
@@ -98,6 +104,18 @@ class CheckTest(unittest.TestCase):
             ],
         )
 
+    def test_steep_arrowhead(self) -> None:
+        """Report an arrowhead meeting its box at 35°, but not one at 45°."""
+        report = self.check("""
+            a [pos="36,133!"]; b [pos="200,0!"];
+            a -> b [headport=n];
+            c [pos="259,159!"]; d [pos="400,0!"];
+            c -> d [headport=n];
+        """)
+        self.assertEqual(
+            report.defects, ["a -> b: head meets the outline of b at 35.0°"]
+        )
+
     def test_corner_arrowhead(self) -> None:
         """Measure an arrowhead meeting a square corner against the side it lies along."""
         report = self.check("""
@@ -126,7 +144,7 @@ class CheckTest(unittest.TestCase):
     def test_arrowheads_overlap(self) -> None:
         """Report arrowheads drawn over or against each other, but neither close ones still apart nor arrows starting from the same point."""
         report = self.check("""
-            a [pos="160,0!"]; b [pos="0,90!"]; c [pos="250,90!"];
+            a [pos="140,0!"]; b [pos="0,90!"]; c [pos="250,90!"];
             b -> c; a -> c [headport=w];
             b -> a [tailport=e];
             d [pos="0,-200!"]; e [pos="0,-280!"]; f [pos="300,-240!"];
@@ -189,11 +207,15 @@ class CheckTest(unittest.TestCase):
         )
 
     def test_unbordered(self) -> None:
-        """Skip invisible arrows, and the ends of arrows on nodes drawn without an outline."""
+        """Skip invisible arrows, and the ends of arrows on nodes drawn without an outline, inside a frame or not."""
         report = self.check("""
             a [pos="0,0!"]; b [pos="200,0!"];
             w [pos="100,100!", shape=point, style=invis];
             h [pos="200,100!", shape=plain, label=<<table><tr><td>h</td></tr></table>>];
+            subgraph cluster_x {
+                j [shape=point, style=invis, width=0, pos="60,60!"];
+                k [shape=point, style=invis, width=0, pos="140,140!"];
+            }
             a -> w -> h;
             a -> b [style=invis, tailclip=false];
             a -> b [color=transparent, tailclip=false];
@@ -220,6 +242,23 @@ class CheckTest(unittest.TestCase):
             p -> q; m -> p;
         """)
         self.assertEqual(report.defects, ["p -> q: passes through frame cluster_x"])
+
+    def test_frame_in_frame(self) -> None:
+        """Count a box drawn inside a frame as inside it, though declared in another frame."""
+        report = self.check("""
+            subgraph cluster_outer {
+                j [shape=point, style=invis, width=0, pos="-60,-60!"];
+                k [shape=point, style=invis, width=0, pos="400,60!"];
+            }
+            subgraph cluster_inner {
+                m [pos="200,0!"];
+                l [shape=point, style=invis, width=0, pos="165,-26!"];
+                n [shape=point, style=invis, width=0, pos="235,26!"];
+            }
+            p [pos="200,-150!"];
+            p -> m;
+        """)
+        self.assertEqual(report.defects, [])
 
     def test_frame_corner(self) -> None:
         """Count an arrow leaving its frame through a corner once."""
@@ -287,6 +326,11 @@ class CheckTest(unittest.TestCase):
             p [pos="-50,40!"]; q [pos="250,40!"];
             p -> q;
         """)
+        self.assertEqual(report.defects, [])
+
+    def test_empty_subgraphs(self) -> None:
+        """Skip frames and subgraphs holding no node."""
+        report = self.check("layout=dot; subgraph cluster_x {} subgraph y {} a;")
         self.assertEqual(report.defects, [])
 
     def test_box_on_frame(self) -> None:
@@ -542,6 +586,41 @@ class MainTest(unittest.TestCase):
             "Defect: a -> c: passes through b\nSize: 354 × 36pt, 1 defect, 0 crossings\n",
         )
         self.assertEqual(result.returncode, 1)
+
+    def test_font(self) -> None:
+        """Print a font drawn with another file than the one measured as a defect, before layout defects, but not one drawn with the same file, and fail."""
+        result = self.run_main("""
+            a [pos="0,0!", fontname="DejaVu Sans Bold"];
+            b [pos="100,0!"]; c [pos="200,0!"];
+            a -> c;
+        """)
+        self.assertRegex(
+            result.stdout,
+            r'^Defect: font "DejaVu Sans Bold": measured with /.*/DejaVuSans-Bold\.ttf, drawn with /.*\n'
+            r"Defect: a -> c: passes through b\n"
+            r"Size: 254 × 36pt, 2 defects, 0 crossings\n$",
+        )
+        self.assertEqual(result.returncode, 1)
+
+    def test_unresolved_font(self) -> None:
+        """Print a font Graphviz cannot resolve as a defect, and fail."""
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "fonts.conf"
+            config.write_text("<fontconfig></fontconfig>")
+            with mock.patch.dict(os.environ, FONTCONFIG_FILE=str(config)):
+                result = self.run_main('a [pos="0,0!"];')
+        self.assertRegex(
+            result.stdout,
+            r'^Defect: font "DejaVu Sans,sans-serif": measured with an unresolved font, drawn with .*\n'
+            r"Size: .*, 1 defect, 0 crossings\n$",
+        )
+        self.assertEqual(result.returncode, 1)
+
+    def test_font_list(self) -> None:
+        """Check a font list starting with a dash, and succeed."""
+        result = self.run_main('a [pos="0,0!", fontname="-apple-system,sans-serif"];')
+        self.assertEqual(result.stdout, "Size: 54 × 36pt, 0 defects, 0 crossings\n")
+        self.assertEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

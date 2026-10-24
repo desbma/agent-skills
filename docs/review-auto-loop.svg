@@ -13,14 +13,14 @@
 <g id="node1" class="node">
 <title>wave_a</title>
 <path fill="#cfe2f3" stroke="black" d="M93.12,-294.16C93.12,-294.16 12,-294.16 12,-294.16 6,-294.16 0,-288.16 0,-282.16 0,-282.16 0,-248.56 0,-248.56 0,-242.56 6,-236.56 12,-236.56 12,-236.56 93.12,-236.56 93.12,-236.56 99.12,-236.56 105.12,-242.56 105.12,-248.56 105.12,-248.56 105.12,-282.16 105.12,-282.16 105.12,-288.16 99.12,-294.16 93.12,-294.16"/>
-<text xml:space="preserve" text-anchor="middle" x="52.56" y="-260.68" font-family="Helvetica,sans-Serif" font-size="14.00">Wave A</text>
+<text xml:space="preserve" text-anchor="middle" x="52.56" y="-260.68" font-family="DejaVu Sans,sans-serif" font-size="14.00">Wave A</text>
 </g>
 <!-- correctness -->
 <g id="node5" class="node">
 <title>correctness</title>
 <path fill="#fff2cc" stroke="black" d="M308.43,-316.61C308.43,-316.61 186.68,-316.61 186.68,-316.61 180.68,-316.61 174.68,-310.61 174.68,-304.61 174.68,-304.61 174.68,-286.11 174.68,-286.11 174.68,-280.11 180.68,-274.11 186.68,-274.11 186.68,-274.11 308.43,-274.11 308.43,-274.11 314.43,-274.11 320.43,-280.11 320.43,-286.11 320.43,-286.11 320.43,-304.61 320.43,-304.61 320.43,-310.61 314.43,-316.61 308.43,-316.61"/>
-<text xml:space="preserve" text-anchor="middle" x="247.56" y="-299.31" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;correctness</text>
-<text xml:space="preserve" text-anchor="middle" x="247.56" y="-282.06" font-family="Helvetica,sans-Serif" font-size="14.00">run 1</text>
+<text xml:space="preserve" text-anchor="middle" x="247.56" y="-299.31" font-family="DejaVu Sans,sans-serif" font-size="14.00">review&#45;correctness</text>
+<text xml:space="preserve" text-anchor="middle" x="247.56" y="-282.06" font-family="DejaVu Sans,sans-serif" font-size="14.00">run 1</text>
 </g>
 <!-- wave_a&#45;&gt;correctness -->
 <g id="edge1" class="edge">
@@ -32,8 +32,8 @@
 <g id="node6" class="node">
 <title>readability</title>
 <path fill="#fff2cc" stroke="black" d="M305.06,-256.61C305.06,-256.61 190.06,-256.61 190.06,-256.61 184.06,-256.61 178.06,-250.61 178.06,-244.61 178.06,-244.61 178.06,-226.11 178.06,-226.11 178.06,-220.11 184.06,-214.11 190.06,-214.11 190.06,-214.11 305.06,-214.11 305.06,-214.11 311.06,-214.11 317.06,-220.11 317.06,-226.11 317.06,-226.11 317.06,-244.61 317.06,-244.61 317.06,-250.61 311.06,-256.61 305.06,-256.61"/>
-<text xml:space="preserve" text-anchor="middle" x="247.56" y="-239.31" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;readability</text>
-<text xml:space="preserve" text-anchor="middle" x="247.56" y="-222.06" font-family="Helvetica,sans-Serif" font-size="14.00">run 1</text>
+<text xml:space="preserve" text-anchor="middle" x="247.56" y="-239.31" font-family="DejaVu Sans,sans-serif" font-size="14.00">review&#45;readability</text>
+<text xml:space="preserve" text-anchor="middle" x="247.56" y="-222.06" font-family="DejaVu Sans,sans-serif" font-size="14.00">run 1</text>
 </g>
 <!-- wave_a&#45;&gt;readability -->
 <g id="edge2" class="edge">
@@ -45,14 +45,14 @@
 <g id="node2" class="node">
 <title>wave_b</title>
 <path fill="#cfe2f3" stroke="black" d="M93.12,-105.16C93.12,-105.16 12,-105.16 12,-105.16 6,-105.16 0,-99.16 0,-93.16 0,-93.16 0,-59.56 0,-59.56 0,-53.56 6,-47.56 12,-47.56 12,-47.56 93.12,-47.56 93.12,-47.56 99.12,-47.56 105.12,-53.56 105.12,-59.56 105.12,-59.56 105.12,-93.16 105.12,-93.16 105.12,-99.16 99.12,-105.16 93.12,-105.16"/>
-<text xml:space="preserve" text-anchor="middle" x="52.56" y="-71.68" font-family="Helvetica,sans-Serif" font-size="14.00">Wave B</text>
+<text xml:space="preserve" text-anchor="middle" x="52.56" y="-71.68" font-family="DejaVu Sans,sans-serif" font-size="14.00">Wave B</text>
 </g>
 <!-- tests -->
 <g id="node7" class="node">
 <title>tests</title>
 <path fill="#fff2cc" stroke="black" d="M285.56,-127.61C285.56,-127.61 209.56,-127.61 209.56,-127.61 203.56,-127.61 197.56,-121.61 197.56,-115.61 197.56,-115.61 197.56,-97.11 197.56,-97.11 197.56,-91.11 203.56,-85.11 209.56,-85.11 209.56,-85.11 285.56,-85.11 285.56,-85.11 291.56,-85.11 297.56,-91.11 297.56,-97.11 297.56,-97.11 297.56,-115.61 297.56,-115.61 297.56,-121.61 291.56,-127.61 285.56,-127.61"/>
-<text xml:space="preserve" text-anchor="middle" x="247.56" y="-110.31" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;tests</text>
-<text xml:space="preserve" text-anchor="middle" x="247.56" y="-93.06" font-family="Helvetica,sans-Serif" font-size="14.00">run 1</text>
+<text xml:space="preserve" text-anchor="middle" x="247.56" y="-110.31" font-family="DejaVu Sans,sans-serif" font-size="14.00">review&#45;tests</text>
+<text xml:space="preserve" text-anchor="middle" x="247.56" y="-93.06" font-family="DejaVu Sans,sans-serif" font-size="14.00">run 1</text>
 </g>
 <!-- wave_b&#45;&gt;tests -->
 <g id="edge15" class="edge">
@@ -64,8 +64,8 @@
 <g id="node8" class="node">
 <title>docs</title>
 <path fill="#fff2cc" stroke="black" d="M284.81,-67.61C284.81,-67.61 210.31,-67.61 210.31,-67.61 204.31,-67.61 198.31,-61.61 198.31,-55.61 198.31,-55.61 198.31,-37.11 198.31,-37.11 198.31,-31.11 204.31,-25.11 210.31,-25.11 210.31,-25.11 284.81,-25.11 284.81,-25.11 290.81,-25.11 296.81,-31.11 296.81,-37.11 296.81,-37.11 296.81,-55.61 296.81,-55.61 296.81,-61.61 290.81,-67.61 284.81,-67.61"/>
-<text xml:space="preserve" text-anchor="middle" x="247.56" y="-50.31" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;docs</text>
-<text xml:space="preserve" text-anchor="middle" x="247.56" y="-33.06" font-family="Helvetica,sans-Serif" font-size="14.00">run 1</text>
+<text xml:space="preserve" text-anchor="middle" x="247.56" y="-50.31" font-family="DejaVu Sans,sans-serif" font-size="14.00">review&#45;docs</text>
+<text xml:space="preserve" text-anchor="middle" x="247.56" y="-33.06" font-family="DejaVu Sans,sans-serif" font-size="14.00">run 1</text>
 </g>
 <!-- wave_b&#45;&gt;docs -->
 <g id="edge16" class="edge">
@@ -77,8 +77,8 @@
 <g id="node3" class="node">
 <title>apply_a</title>
 <path fill="#cfe2f3" stroke="black" d="M994.68,-286.61C994.68,-286.61 916.43,-286.61 916.43,-286.61 910.43,-286.61 904.43,-280.61 904.43,-274.61 904.43,-274.61 904.43,-256.11 904.43,-256.11 904.43,-250.11 910.43,-244.11 916.43,-244.11 916.43,-244.11 994.68,-244.11 994.68,-244.11 1000.68,-244.11 1006.68,-250.11 1006.68,-256.11 1006.68,-256.11 1006.68,-274.61 1006.68,-274.61 1006.68,-280.61 1000.68,-286.61 994.68,-286.61"/>
-<text xml:space="preserve" text-anchor="middle" x="955.56" y="-269.31" font-family="Helvetica,sans-Serif" font-size="14.00">main agent</text>
-<text xml:space="preserve" text-anchor="middle" x="955.56" y="-252.06" font-family="Helvetica,sans-Serif" font-size="14.00">applies fixes</text>
+<text xml:space="preserve" text-anchor="middle" x="955.56" y="-269.31" font-family="DejaVu Sans,sans-serif" font-size="14.00">main agent</text>
+<text xml:space="preserve" text-anchor="middle" x="955.56" y="-252.06" font-family="DejaVu Sans,sans-serif" font-size="14.00">applies fixes</text>
 </g>
 <!-- repeat_a1 -->
 <!-- apply_a&#45;&gt;repeat_a1 -->
@@ -100,8 +100,8 @@
 <g id="node4" class="node">
 <title>apply_b</title>
 <path fill="#cfe2f3" stroke="black" d="M994.68,-97.61C994.68,-97.61 916.43,-97.61 916.43,-97.61 910.43,-97.61 904.43,-91.61 904.43,-85.61 904.43,-85.61 904.43,-67.11 904.43,-67.11 904.43,-61.11 910.43,-55.11 916.43,-55.11 916.43,-55.11 994.68,-55.11 994.68,-55.11 1000.68,-55.11 1006.68,-61.11 1006.68,-67.11 1006.68,-67.11 1006.68,-85.61 1006.68,-85.61 1006.68,-91.61 1000.68,-97.61 994.68,-97.61"/>
-<text xml:space="preserve" text-anchor="middle" x="955.56" y="-80.31" font-family="Helvetica,sans-Serif" font-size="14.00">main agent</text>
-<text xml:space="preserve" text-anchor="middle" x="955.56" y="-63.06" font-family="Helvetica,sans-Serif" font-size="14.00">applies fixes</text>
+<text xml:space="preserve" text-anchor="middle" x="955.56" y="-80.31" font-family="DejaVu Sans,sans-serif" font-size="14.00">main agent</text>
+<text xml:space="preserve" text-anchor="middle" x="955.56" y="-63.06" font-family="DejaVu Sans,sans-serif" font-size="14.00">applies fixes</text>
 </g>
 <!-- repeat_b1 -->
 <!-- apply_b&#45;&gt;repeat_b1 -->
@@ -113,8 +113,8 @@
 <g id="node9" class="node">
 <title>correctness_n</title>
 <path fill="#fff2cc" stroke="black" stroke-dasharray="1,5" d="M493.43,-316.61C493.43,-316.61 371.68,-316.61 371.68,-316.61 365.68,-316.61 359.68,-310.61 359.68,-304.61 359.68,-304.61 359.68,-286.11 359.68,-286.11 359.68,-280.11 365.68,-274.11 371.68,-274.11 371.68,-274.11 493.43,-274.11 493.43,-274.11 499.43,-274.11 505.43,-280.11 505.43,-286.11 505.43,-286.11 505.43,-304.61 505.43,-304.61 505.43,-310.61 499.43,-316.61 493.43,-316.61"/>
-<text xml:space="preserve" text-anchor="middle" x="432.56" y="-299.31" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;correctness</text>
-<text xml:space="preserve" text-anchor="middle" x="432.56" y="-282.06" font-family="Helvetica,sans-Serif" font-size="14.00">run 2 … N</text>
+<text xml:space="preserve" text-anchor="middle" x="432.56" y="-299.31" font-family="DejaVu Sans,sans-serif" font-size="14.00">review&#45;correctness</text>
+<text xml:space="preserve" text-anchor="middle" x="432.56" y="-282.06" font-family="DejaVu Sans,sans-serif" font-size="14.00">run 2 … N</text>
 </g>
 <!-- correctness&#45;&gt;correctness_n -->
 <g id="edge3" class="edge">
@@ -126,8 +126,8 @@
 <g id="node10" class="node">
 <title>readability_n</title>
 <path fill="#fff2cc" stroke="black" stroke-dasharray="1,5" d="M490.06,-256.61C490.06,-256.61 375.06,-256.61 375.06,-256.61 369.06,-256.61 363.06,-250.61 363.06,-244.61 363.06,-244.61 363.06,-226.11 363.06,-226.11 363.06,-220.11 369.06,-214.11 375.06,-214.11 375.06,-214.11 490.06,-214.11 490.06,-214.11 496.06,-214.11 502.06,-220.11 502.06,-226.11 502.06,-226.11 502.06,-244.61 502.06,-244.61 502.06,-250.61 496.06,-256.61 490.06,-256.61"/>
-<text xml:space="preserve" text-anchor="middle" x="432.56" y="-239.31" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;readability</text>
-<text xml:space="preserve" text-anchor="middle" x="432.56" y="-222.06" font-family="Helvetica,sans-Serif" font-size="14.00">run 2 … N</text>
+<text xml:space="preserve" text-anchor="middle" x="432.56" y="-239.31" font-family="DejaVu Sans,sans-serif" font-size="14.00">review&#45;readability</text>
+<text xml:space="preserve" text-anchor="middle" x="432.56" y="-222.06" font-family="DejaVu Sans,sans-serif" font-size="14.00">run 2 … N</text>
 </g>
 <!-- readability&#45;&gt;readability_n -->
 <g id="edge4" class="edge">
@@ -139,8 +139,8 @@
 <g id="node11" class="node">
 <title>tests_n</title>
 <path fill="#fff2cc" stroke="black" stroke-dasharray="1,5" d="M470.56,-127.61C470.56,-127.61 394.56,-127.61 394.56,-127.61 388.56,-127.61 382.56,-121.61 382.56,-115.61 382.56,-115.61 382.56,-97.11 382.56,-97.11 382.56,-91.11 388.56,-85.11 394.56,-85.11 394.56,-85.11 470.56,-85.11 470.56,-85.11 476.56,-85.11 482.56,-91.11 482.56,-97.11 482.56,-97.11 482.56,-115.61 482.56,-115.61 482.56,-121.61 476.56,-127.61 470.56,-127.61"/>
-<text xml:space="preserve" text-anchor="middle" x="432.56" y="-110.31" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;tests</text>
-<text xml:space="preserve" text-anchor="middle" x="432.56" y="-93.06" font-family="Helvetica,sans-Serif" font-size="14.00">run 2 … N</text>
+<text xml:space="preserve" text-anchor="middle" x="432.56" y="-110.31" font-family="DejaVu Sans,sans-serif" font-size="14.00">review&#45;tests</text>
+<text xml:space="preserve" text-anchor="middle" x="432.56" y="-93.06" font-family="DejaVu Sans,sans-serif" font-size="14.00">run 2 … N</text>
 </g>
 <!-- tests&#45;&gt;tests_n -->
 <g id="edge17" class="edge">
@@ -152,8 +152,8 @@
 <g id="node12" class="node">
 <title>docs_n</title>
 <path fill="#fff2cc" stroke="black" stroke-dasharray="1,5" d="M469.81,-67.61C469.81,-67.61 395.31,-67.61 395.31,-67.61 389.31,-67.61 383.31,-61.61 383.31,-55.61 383.31,-55.61 383.31,-37.11 383.31,-37.11 383.31,-31.11 389.31,-25.11 395.31,-25.11 395.31,-25.11 469.81,-25.11 469.81,-25.11 475.81,-25.11 481.81,-31.11 481.81,-37.11 481.81,-37.11 481.81,-55.61 481.81,-55.61 481.81,-61.61 475.81,-67.61 469.81,-67.61"/>
-<text xml:space="preserve" text-anchor="middle" x="432.56" y="-50.31" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;docs</text>
-<text xml:space="preserve" text-anchor="middle" x="432.56" y="-33.06" font-family="Helvetica,sans-Serif" font-size="14.00">run 2 … N</text>
+<text xml:space="preserve" text-anchor="middle" x="432.56" y="-50.31" font-family="DejaVu Sans,sans-serif" font-size="14.00">review&#45;docs</text>
+<text xml:space="preserve" text-anchor="middle" x="432.56" y="-33.06" font-family="DejaVu Sans,sans-serif" font-size="14.00">run 2 … N</text>
 </g>
 <!-- docs&#45;&gt;docs_n -->
 <g id="edge18" class="edge">
@@ -165,7 +165,7 @@
 <g id="node13" class="node">
 <title>judge_a</title>
 <path fill="#d9ead3" stroke="black" d="M668.18,-294.16C668.18,-294.16 586.93,-294.16 586.93,-294.16 580.93,-294.16 574.93,-288.16 574.93,-282.16 574.93,-282.16 574.93,-248.56 574.93,-248.56 574.93,-242.56 580.93,-236.56 586.93,-236.56 586.93,-236.56 668.18,-236.56 668.18,-236.56 674.18,-236.56 680.18,-242.56 680.18,-248.56 680.18,-248.56 680.18,-282.16 680.18,-282.16 680.18,-288.16 674.18,-294.16 668.18,-294.16"/>
-<text xml:space="preserve" text-anchor="middle" x="627.56" y="-260.68" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;judge</text>
+<text xml:space="preserve" text-anchor="middle" x="627.56" y="-260.68" font-family="DejaVu Sans,sans-serif" font-size="14.00">review&#45;judge</text>
 </g>
 <!-- correctness_n&#45;&gt;judge_a -->
 <g id="edge5" class="edge">
@@ -183,7 +183,7 @@
 <g id="node14" class="node">
 <title>judge_b</title>
 <path fill="#d9ead3" stroke="black" d="M668.18,-105.16C668.18,-105.16 586.93,-105.16 586.93,-105.16 580.93,-105.16 574.93,-99.16 574.93,-93.16 574.93,-93.16 574.93,-59.56 574.93,-59.56 574.93,-53.56 580.93,-47.56 586.93,-47.56 586.93,-47.56 668.18,-47.56 668.18,-47.56 674.18,-47.56 680.18,-53.56 680.18,-59.56 680.18,-59.56 680.18,-93.16 680.18,-93.16 680.18,-99.16 674.18,-105.16 668.18,-105.16"/>
-<text xml:space="preserve" text-anchor="middle" x="627.56" y="-71.68" font-family="Helvetica,sans-Serif" font-size="14.00">review&#45;judge</text>
+<text xml:space="preserve" text-anchor="middle" x="627.56" y="-71.68" font-family="DejaVu Sans,sans-serif" font-size="14.00">review&#45;judge</text>
 </g>
 <!-- tests_n&#45;&gt;judge_b -->
 <g id="edge19" class="edge">
@@ -201,7 +201,7 @@
 <g id="node15" class="node">
 <title>user_a</title>
 <ellipse fill="lightgrey" stroke="black" cx="792.56" cy="-265.36" rx="73.3" ry="18"/>
-<text xml:space="preserve" text-anchor="middle" x="792.56" y="-260.68" font-family="Helvetica,sans-Serif" font-size="14.00">user decides</text>
+<text xml:space="preserve" text-anchor="middle" x="792.56" y="-260.68" font-family="DejaVu Sans,sans-serif" font-size="14.00">user decides</text>
 </g>
 <!-- judge_a&#45;&gt;user_a -->
 <g id="edge7" class="edge">
@@ -213,7 +213,7 @@
 <g id="node16" class="node">
 <title>user_b</title>
 <ellipse fill="lightgrey" stroke="black" cx="792.56" cy="-76.36" rx="73.3" ry="18"/>
-<text xml:space="preserve" text-anchor="middle" x="792.56" y="-71.68" font-family="Helvetica,sans-Serif" font-size="14.00">user decides</text>
+<text xml:space="preserve" text-anchor="middle" x="792.56" y="-71.68" font-family="DejaVu Sans,sans-serif" font-size="14.00">user decides</text>
 </g>
 <!-- judge_b&#45;&gt;user_b -->
 <g id="edge21" class="edge">
@@ -241,14 +241,14 @@
 <!-- note -->
 <g id="node18" class="node">
 <title>note</title>
-<text xml:space="preserve" text-anchor="middle" x="339.56" y="-184.23" font-family="Helvetica,sans-Serif" font-size="10.00">number of runs auto scales with reviewed diff size</text>
+<text xml:space="preserve" text-anchor="middle" x="339.56" y="-184.23" font-family="DejaVu Sans,sans-serif" font-size="10.00">number of runs auto scales with reviewed diff size</text>
 </g>
 <!-- repeat_a2 -->
 <!-- repeat_a1&#45;&gt;repeat_a2 -->
 <g id="edge10" class="edge">
 <title>repeat_a1&#45;&gt;repeat_a2</title>
 <path fill="none" stroke="black" stroke-dasharray="5,2" d="M954.91,-339.36C927.99,-339.36 79.7,-339.36 53.19,-339.36"/>
-<text xml:space="preserve" text-anchor="middle" x="488.3" y="-342.61" font-family="Helvetica,sans-Serif" font-size="10.00">repeat</text>
+<text xml:space="preserve" text-anchor="middle" x="488.3" y="-342.61" font-family="DejaVu Sans,sans-serif" font-size="10.00">repeat</text>
 </g>
 <!-- repeat_a2&#45;&gt;wave_a -->
 <g id="edge11" class="edge">
@@ -261,7 +261,7 @@
 <g id="edge24" class="edge">
 <title>repeat_b1&#45;&gt;repeat_b2</title>
 <path fill="none" stroke="black" stroke-dasharray="5,2" d="M954.91,-0.36C927.99,-0.36 79.7,-0.36 53.19,-0.36"/>
-<text xml:space="preserve" text-anchor="middle" x="488.3" y="-3.61" font-family="Helvetica,sans-Serif" font-size="10.00">repeat</text>
+<text xml:space="preserve" text-anchor="middle" x="488.3" y="-3.61" font-family="DejaVu Sans,sans-serif" font-size="10.00">repeat</text>
 </g>
 <!-- repeat_b2&#45;&gt;wave_b -->
 <g id="edge25" class="edge">

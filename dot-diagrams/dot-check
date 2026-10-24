@@ -5,6 +5,7 @@ import argparse
 import itertools
 import json
 import math
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -22,7 +23,7 @@ ATTACH_TOLERANCE = 1.5
 # Distance from an arrow end within which another arrow meets it rather than crosses it, in points
 END_TOLERANCE = 2.0
 # Smallest angle between an arrowhead and the outline it touches, in degrees
-MIN_ARROWHEAD_ANGLE = 30.0
+MIN_ARROWHEAD_ANGLE = 40.0
 # Smallest gap between two arrowheads, in points
 ARROWHEAD_GAP = 2.0
 # Smallest gap between a box and a frame line, in points
@@ -39,6 +40,10 @@ TEXT_ASCENT = 0.7
 # Points sampled per Bézier segment and per ellipse
 BEZIER_STEPS = 16
 ELLIPSE_STEPS = 64
+# Line of Graphviz's verbose output naming the font it measures a font name's text with, by its file when known
+FONT_RESOLUTION = re.compile(
+    r'fontname: (?:"(.*)" resolved to: (?:.*" )?(.+)|unable to resolve "(.*)")'
+)
 
 
 @dataclass
@@ -58,8 +63,6 @@ class Shape:
     lines: list[Polyline]
     # Whether the outline is a box with rounded corners
     rounded_box: bool = False
-    # Nodes a frame encloses
-    members: frozenset[int] = frozenset()
 
 
 @dataclass
@@ -310,14 +313,47 @@ def render(path: Path) -> dict[str, Any]:
     return json.loads(result.stdout)
 
 
+def font_defects(path: Path) -> list[str]:
+    """Find the fonts of a .dot file whose text Graphviz measures with another font file than the one drawn."""
+    result = subprocess.run(
+        ["dot", "-v", "-Tjson", str(path)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        check=True,
+        text=True,
+    )
+    defects = []
+    for line in result.stderr.splitlines():
+        if not (match := FONT_RESOLUTION.fullmatch(line)):
+            continue
+        name, measured = match[1] or match[3], match[2]
+        drawn = subprocess.run(
+            ["fc-match", "--format=%{file}", "--", name],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=None,
+            check=True,
+            text=True,
+        ).stdout
+        if measured != drawn:
+            defects.append(
+                f'font "{name}": measured with {measured or "an unresolved font"}, drawn with {drawn}'
+            )
+    return defects
+
+
 def check(graph: dict[str, Any]) -> Report:
     """Find layout defects and arrow crossings in a laid out graph."""
     objects = graph.get("objects", [])
+    centers = {}
     nodes = {}
     frames = {}
     labels = []
     for i, o in enumerate(objects):
-        if "nodes" not in o:
+        if i >= graph["_subgraph_cnt"]:
+            x, y = map(float, o["pos"].split(","))
+            centers[i] = (x, y)
             lines = trace(visible(o.get("_draw_", [])) + o.get("_ldraw_", []))
             # Nodes drawing no line, like invisible ones or bare text, have none to attach to
             if lines:
@@ -336,7 +372,7 @@ def check(graph: dict[str, Any]) -> Report:
                 name = (
                     f'frame "{o["label"]}"' if o.get("label") else f"frame {o['name']}"
                 )
-                frames[o["name"]] = Shape(name, lines, members=frozenset(o["nodes"]))
+                frames[o["name"]] = Shape(name, lines)
             labels.extend(
                 Label(f'title "{text}"', rect)
                 for text, rect in texts(o.get("_ldraw_", []))
@@ -408,7 +444,7 @@ def check(graph: dict[str, Any]) -> Report:
                 meeting_angle = math.degrees(math.asin(min(1, clearance / length)))
                 if meeting_angle < MIN_ARROWHEAD_ANGLE:
                     defects.append(
-                        f"{edge.name}: {kind} meets the outline of {outline.name} at {meeting_angle:.0f}°"
+                        f"{edge.name}: {kind} meets the outline of {outline.name} at {meeting_angle:.1f}°"
                     )
         for i, node in nodes.items():
             if i not in (edge.tail, edge.head) and crossings(edge.drawn(), node.lines):
@@ -420,7 +456,9 @@ def check(graph: dict[str, Any]) -> Report:
             for point in crossings(edge.centerline, frame.lines):
                 if min(math.dist(point, p) for p in ends + points) > END_TOLERANCE:
                     points.append(point)
-            inside_ends = sum(i in frame.members for i in (edge.tail, edge.head))
+            inside_ends = sum(
+                inside(centers[i], frame.lines) for i in (edge.tail, edge.head)
+            )
             # An arrow with one end inside crosses the outline once, others never
             if len(points) > int(inside_ends == 1):
                 way = "leaves and re-enters" if inside_ends else "passes through"
@@ -477,16 +515,18 @@ def main() -> None:
     parser.add_argument("file", type=Path, help="Graphviz .dot file")
     args = parser.parse_args()
     report = check(render(args.file))
-    for defect in report.defects:
+    defects = font_defects(args.file) + report.defects
+    for defect in defects:
         print(f"Defect: {defect}")
     for crossing in report.crossings:
         print(f"Crossing: {crossing}")
-    defects, crossed = len(report.defects), len(report.crossings)
+    defect_count, crossing_count = len(defects), len(report.crossings)
     print(
         f"Size: {report.size[0]:g} × {report.size[1]:g}pt, "
-        f"{defects} defect{'s' * (defects != 1)}, {crossed} crossing{'s' * (crossed != 1)}"
+        f"{defect_count} defect{'s' * (defect_count != 1)}, "
+        f"{crossing_count} crossing{'s' * (crossing_count != 1)}"
     )
-    if report.defects:
+    if defects:
         sys.exit(1)
 
 

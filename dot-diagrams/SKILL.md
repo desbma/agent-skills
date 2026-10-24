@@ -41,18 +41,18 @@ Show the user a diagram once `dot-check` reports no defects, or say which remain
 - Labels are a few words. Label an edge only when its meaning is not obvious.
 - Give each node role its own style. Add a legend only as a last resort.
 - Draw boxes with rounded corners: set `node [shape=box, style=rounded]` once at the top of the file. A node or role that sets its own `style` replaces the whole list, so repeat `rounded` in it, as in `style="rounded,filled"`.
-- Draw boxes as rectangles clearly wider than tall, about twice or more. Give a box room for its arrows by widening it or aiming them with ports, not by making it taller.
+- Draw boxes as rectangles clearly wider than tall, about twice or more. Give a box room for its arrows by widening it or aiming them with ports.
 - Leave a margin around the drawing with `pad=0.2` on the graph.
-- Keep fonts and text sizes the same across the project's diagrams. Use the Graphviz default font and size unless the context needs others, then set them once at the top of the file, not on single nodes or edges.
+- Set `fontname="DejaVu Sans,sans-serif"` at the top of the file on `graph`, `node` and `edge`, unless the user or the page embedding the diagram needs another font: the graph's font does not carry over to nodes and edges. Keep text sizes the same across the project's diagrams.
 
 ## Graphviz behavior
 
 - To fix an arrow end that stops short at a rounded corner or at the fold of a `note`, widen the box with `width`, or aim that end at the middle of the side facing the arrow with a compass port (`tailport=e`, `headport=w`). In a `dot` layout, a port also reroutes the arrow, and can bend it. Corner ports (`ne`, `sw`, ...) sit on the square corner, off the drawn line. A port shared by two arrows stacks their heads.
 - `samehead` and `sametail` on `constraint=false` edges can start or end an arrow away from its node.
-- `dot` places nodes in rows and columns of its own. When they are not the ones you want, pin positions by hand with `neato` rather than piling up `dot` workarounds: `layout=neato`, `inputscale=72` for positions in points, `pos="x,y!"` on every node, `splines=line`, not `splines=true`, whose arrows detour around boxes and out of frames. Then:
+- `dot` chooses the order within each row itself: `rank=same` fixes a row, but `group`, `weight` and invisible edges only nudge the order. When the drawing needs the order within rows set too, pin positions by hand with `neato`: `layout=neato`, `inputscale=72` for positions in points, `pos="x,y!"` on every node, `splines=line`, not `splines=true`, whose arrows detour around boxes and out of frames. Then:
   - `Layout type: "neato" not recognized` means its plugin is missing: Debian and Ubuntu ship it in its own package, `libgvplugin-neato-layout8`, for the user to install.
   - A frame hugs its nodes, ignores `margin`, and its title lands on them: pad it with two invisible corner nodes, `[shape=point, style=invis, width=0, pos="x,y!"]`, 8pt beyond its outer boxes, and 28pt above the top one when the frame has a title. `width=0` keeps them from taking the size set by the frame's `node [width=...]`.
-  - Nested frames are not drawn.
+  - Nested frames are not drawn: declare the inner frame on its own, and place its nodes inside the outer one.
   - A `label` or `xlabel` on a sloped arrow may be drawn across it: place it with `taillabel`, `labelangle` and `labeldistance` instead.
 - Place boxes yourself, not with a scripted search over positions.
 

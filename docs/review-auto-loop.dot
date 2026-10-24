@@ -3,8 +3,9 @@ digraph review_workflow {
     inputscale=72
     splines=line
     pad=0.2
-    node [shape=box, style="rounded,filled", fontname="Helvetica"]
-    edge [fontname="Helvetica", fontsize=10]
+    fontname="DejaVu Sans,sans-serif"
+    node [shape=box, style="rounded,filled", fontname="DejaVu Sans,sans-serif"]
+    edge [fontname="DejaVu Sans,sans-serif", fontsize=10]
 
     // Main agent, waves sized and spaced like the judges, mirroring their arrows
     node [fillcolor="#cfe2f3"]
