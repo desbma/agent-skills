@@ -739,11 +739,18 @@ class WaveFixture(CliFixture):
     def setUp(self) -> None:
         """Create a review dir and the wave 1 report of a phase A wave."""
         self.review_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(
+            mock.patch.object(review.Path, "home", return_value=Path("/home/tester"))
+        )
         self.jj = self.enterContext(
             mock.patch.multiple(
-                review, resolve_change_id=mock.DEFAULT, diff_summary=mock.DEFAULT
+                review,
+                resolve_change_id=mock.DEFAULT,
+                diff_summary=mock.DEFAULT,
+                jj_output=mock.DEFAULT,
             )
         )
+        self.jj["jj_output"].return_value = "/home/tester/src/project\n"
         self.jj["resolve_change_id"].return_value = CHANGE_ID
         self.jj["diff_summary"].return_value = "2 files changed, 30 insertions(+)"
         self.report = self.init(
@@ -1535,9 +1542,20 @@ class WaveTest(WaveFixture):
             "- apply: C1\n- apply with changes: C2\n"
             "- decline: R1\n- your call: R2\n",
         )
+        self.jj["jj_output"].assert_called_once_with(["root"])
         lines = self.report.read_text().splitlines()
         self.assertTrue(lines[0].startswith("<!-- review:"))
-        self.assertEqual(lines[2], f"# Review wave 1 — {REV}")
+        self.assertEqual(lines[2], "# Review wave 1")
+        self.assertEqual(
+            lines[4:9],
+            [
+                "## Change",
+                "",
+                "- **Source directory**: `~/src/project`",
+                f"- **Revision**: {REV}",
+                "- **Diff**: 2 files changed, 30 insertions(+)",
+            ],
+        )
         self.assertIn("- **Config**: correctness ≤2 · readability ≤2", lines)
         self.assertIn("## Items", lines)
         self.assertEqual(
@@ -1558,10 +1576,10 @@ class WaveTest(WaveFixture):
         self.assertIn("Subsumed by [C1](#c1-run-1-item-1).", lines)
         summary = lines.index("The page now closes its `<details>` fold.")
         grid = max(index for index, line in enumerate(lines) if line.startswith("|"))
+        self.assertLess(lines.index("## Change"), summary)
+        self.assertLess(summary, lines.index("## Review status"))
         self.assertLess(lines.index("## Review status"), grid)
-        self.assertLess(grid, lines.index("## Change summary"))
-        self.assertLess(lines.index("## Change summary"), summary)
-        self.assertLess(summary, lines.index("## Items"))
+        self.assertLess(grid, lines.index("## Items"))
 
     def test_a_revised_estimate_reaches_the_index_and_the_decision(self) -> None:
         """Format, index, recap and decide an apply carrying a revised estimate like a bare one."""
@@ -1650,6 +1668,15 @@ class WaveTest(WaveFixture):
             self.report.read_text(),
         )
 
+    def test_format_writes_a_source_dir_outside_home_in_full(self) -> None:
+        """Write the source dir as its absolute path when it sits outside the home dir."""
+        self.jj["jj_output"].return_value = "/srv/project\n"
+        self.ready()
+        self.run_cli("report", "format", self.report)
+        self.assertIn(
+            "- **Source directory**: `/srv/project`\n", self.report.read_text()
+        )
+
     def test_an_excluded_domain_is_left_out(self) -> None:
         """Formatting waits only on the chains of the domains the caps left active, and names only their reviewers."""
         review_dir = Path(self.review_dir, "excluded")
@@ -1673,7 +1700,7 @@ class WaveTest(WaveFixture):
         self.assess(first, "not worth it", proposal="decline")
         self.run_cli("report", "format", self.report)
         lines = self.report.read_text().splitlines()
-        self.assertEqual(lines.count(f"# Review wave 1 — {REV}"), 1)
+        self.assertEqual(lines.count("# Review wave 1"), 1)
         self.assertEqual(lines.count("## Items"), 1)
         self.assertIn("  - [C1 / major / holds, decline](#c1-run-1-item-1)", lines)
 
@@ -1703,7 +1730,7 @@ class WaveTest(WaveFixture):
         self.write_summary()
         self.assertEqual(self.run_cli("report", "format", self.report), "")
         lines = self.report.read_text().splitlines()
-        self.assertEqual(lines[2], f"# Review wave 1 — {REV}")
+        self.assertEqual(lines[2], "# Review wave 1")
         self.assertNotIn("## Items", lines)
 
     def test_recap_counts_a_single_item(self) -> None:

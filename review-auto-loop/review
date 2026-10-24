@@ -881,11 +881,25 @@ def render_grid(
 
 
 def render_markdown(
-    state: WaveState, metadata: ReportMetadata, stat: str, summary: list[str]
+    state: WaveState,
+    metadata: ReportMetadata,
+    root: Path,
+    stat: str,
+    summary: list[str],
 ) -> list[str]:
-    """Render the wave report's top part: title, status list, the run grid as a markdown table, and the change summary."""
+    """Render the wave report's top part."""
+    home = Path.home()
+    source = f"~/{root.relative_to(home)}" if root.is_relative_to(home) else str(root)
     return [
-        f"# Review wave {metadata.wave} — {metadata.short_change_id}",
+        f"# Review wave {metadata.wave}",
+        "",
+        "## Change",
+        "",
+        f"- **Source directory**: `{source}`",
+        f"- **Revision**: {metadata.short_change_id}",
+        f"- **Diff**: {stat}",
+        "",
+        *summary,
         "",
         "## Review status",
         "",
@@ -898,13 +912,8 @@ def render_markdown(
         *([f"- **Judge model**: {JUDGE_MODEL_NAME}"] if metadata.judge else []),
         f"- **Config**: {config_text(metadata.domain_caps)}",
         f"- **Review count**: {state.total} total",
-        f"- **Diff**: {stat}",
         "",
         *render_grid(state, "pipe", separate_waves=False),
-        "",
-        "## Change summary",
-        "",
-        *summary,
     ]
 
 
@@ -1799,6 +1808,7 @@ def cmd_report_format(args: argparse.Namespace) -> None:
     top = render_markdown(
         state,
         metadata,
+        Path(jj_output(["root"]).strip()),
         diff_summary(metadata.change_id),
         render_prose(summary.splitlines(), targets),
     )
