@@ -25,6 +25,8 @@ END_TOLERANCE = 2.0
 MIN_ARROWHEAD_ANGLE = 30.0
 # Smallest gap between two arrowheads, in points
 ARROWHEAD_GAP = 2.0
+# Smallest gap between a box and a frame line, in points
+FRAME_GAP = 4.0
 # Corner radius of rounded boxes, capped at a third of their shorter side, in points
 CORNER_RADIUS = 12.0
 # Node shapes drawn as rectangles
@@ -56,6 +58,8 @@ class Shape:
     lines: list[Polyline]
     # Whether the outline is a box with rounded corners
     rounded_box: bool = False
+    # Nodes a frame encloses
+    members: frozenset[int] = frozenset()
 
 
 @dataclass
@@ -79,6 +83,8 @@ class Edge:
     tail: int
     head: int
     lines: list[Polyline]
+    # Path all colors of the arrow are drawn along, a line per spline
+    centerline: list[Polyline]
     # Tail and head, by name
     ends: dict[str, End]
 
@@ -325,11 +331,12 @@ def check(graph: dict[str, Any]) -> Report:
                 if not lines or not inside(center(rect), lines)
             )
         else:
-            if "_draw_" in o:
+            # Frames drawing no line, like transparent ones, have none to check
+            if lines := trace(visible(o.get("_draw_", []))):
                 name = (
                     f'frame "{o["label"]}"' if o.get("label") else f"frame {o['name']}"
                 )
-                frames[o["name"]] = Shape(name, trace(o["_draw_"]))
+                frames[o["name"]] = Shape(name, lines, members=frozenset(o["nodes"]))
             labels.extend(
                 Label(f'title "{text}"', rect)
                 for text, rect in texts(o.get("_ldraw_", []))
@@ -346,27 +353,32 @@ def check(graph: dict[str, Any]) -> Report:
         lines = trace([op for op in visible(e.get("_draw_", [])) if op["op"] in "bB"])
         if not lines:
             continue
-        # The edge's spline: its arrowhead tips, s at the tail and e at the head, then its points
-        tokens = [token.split(",") for token in e["pos"].replace(";", " ").split()]
-        tips = {t[0]: (float(t[1]), float(t[2])) for t in tokens if len(t) == 3}
-        spline = [(float(t[0]), float(t[1])) for t in tokens if len(t) == 2]
+        # The edge's splines: their arrowhead tips, s at the tail and e at the head, then their points
+        splines = [[t.split(",") for t in part.split()] for part in e["pos"].split(";")]
+        tips = {
+            t[0]: (float(t[1]), float(t[2])) for s in splines for t in s if len(t) == 3
+        }
+        paths = [
+            [(float(t[0]), float(t[1])) for t in s if len(t) == 2] for s in splines
+        ]
         edges.append(
             Edge(
                 name=name,
                 tail=e["tail"],
                 head=e["head"],
                 lines=lines,
+                centerline=[bezier(path) for path in paths],
                 ends={
                     "tail": End(
                         frames.get(e.get("ltail")) or nodes.get(e["tail"]),
-                        tips.get("s", spline[0]),
-                        spline[0],
+                        tips.get("s", paths[0][0]),
+                        paths[0][0],
                         trace(visible(e.get("_tdraw_", []))),
                     ),
                     "head": End(
                         frames.get(e.get("lhead")) or nodes.get(e["head"]),
-                        tips.get("e", spline[-1]),
-                        spline[-1],
+                        tips.get("e", paths[-1][-1]),
+                        paths[-1][-1],
                         trace(visible(e.get("_hdraw_", []))),
                     ),
                 },
@@ -401,6 +413,22 @@ def check(graph: dict[str, Any]) -> Report:
         for i, node in nodes.items():
             if i not in (edge.tail, edge.head) and crossings(edge.drawn(), node.lines):
                 defects.append(f"{edge.name}: passes through {node.name}")
+        ends = [end.point for end in edge.ends.values()]
+        for frame in frames.values():
+            # Points where the arrow crosses the outline away from its ends, once each
+            points: list[Point] = []
+            for point in crossings(edge.centerline, frame.lines):
+                if min(math.dist(point, p) for p in ends + points) > END_TOLERANCE:
+                    points.append(point)
+            inside_ends = sum(i in frame.members for i in (edge.tail, edge.head))
+            # An arrow with one end inside crosses the outline once, others never
+            if len(points) > int(inside_ends == 1):
+                way = "leaves and re-enters" if inside_ends else "passes through"
+                defects.append(f"{edge.name}: {way} {frame.name}")
+    for node in nodes.values():
+        for frame in frames.values():
+            if gap(node.lines, frame.lines) < FRAME_GAP:
+                defects.append(f"{node.name}: touches {frame.name}")
     # Drawn arrowheads, with the arrow and the end they belong to
     arrowheads = [
         (edge, kind, end.arrowhead)

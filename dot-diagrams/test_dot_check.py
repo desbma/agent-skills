@@ -208,6 +208,102 @@ class CheckTest(unittest.TestCase):
         """)
         self.assertEqual(report.defects, ["a -> c: passes through b"])
 
+    def test_through_frame(self) -> None:
+        """Report an arrow passing through a frame, but not one leaving it once."""
+        report = self.check("""
+            subgraph cluster_x {
+                m [pos="100,0!"];
+                j [shape=point, style=invis, width=0, pos="60,-30!"];
+                k [shape=point, style=invis, width=0, pos="140,50!"];
+            }
+            p [pos="-50,35!"]; q [pos="250,35!"];
+            p -> q; m -> p;
+        """)
+        self.assertEqual(report.defects, ["p -> q: passes through frame cluster_x"])
+
+    def test_frame_corner(self) -> None:
+        """Count an arrow leaving its frame through a corner once."""
+        report = self.check("""
+            subgraph cluster_x {
+                m [pos="0,0!"];
+                j [shape=point, style=invis, width=0, pos="-50,-50!"];
+                k [shape=point, style=invis, width=0, pos="50,50!"];
+            }
+            p [pos="200,200!"]; m -> p;
+        """)
+        self.assertEqual(report.defects, [])
+
+    def test_out_of_frame(self) -> None:
+        """Report an arrow leaving its frame and coming back."""
+        report = self.check("""
+            splines=true;
+            subgraph cluster_x {
+                a [pos="0,0!"]; m [pos="100,0!"]; b [pos="200,0!"];
+                j [shape=point, style=invis, width=0, pos="-40,-23!"];
+                k [shape=point, style=invis, width=0, pos="240,23!"];
+            }
+            a -> b;
+        """)
+        self.assertEqual(
+            report.defects, ["a -> b: leaves and re-enters frame cluster_x"]
+        )
+
+    def test_out_of_frame_to_outside(self) -> None:
+        """Report an arrow to a box outside its frame leaving it more than once."""
+        report = self.check("""
+            splines=true;
+            subgraph cluster_x {
+                a [pos="0,0!"]; m [pos="100,0!"];
+                j [shape=point, style=invis, width=0, pos="-40,-23!"];
+                k [shape=point, style=invis, width=0, pos="340,23!"];
+            }
+            b [pos="400,0!"];
+            a -> b;
+        """)
+        self.assertEqual(
+            report.defects, ["a -> b: leaves and re-enters frame cluster_x"]
+        )
+
+    def test_multicolored_out_of_frame(self) -> None:
+        """Count a multicolored arrow leaving its frame once, straight or sloped."""
+        report = self.check("""
+            subgraph cluster_x {
+                a [pos="0,0!"];
+                j [shape=point, style=invis, width=0, pos="-40,-30!"];
+                k [shape=point, style=invis, width=0, pos="40,30!"];
+            }
+            b [pos="150,150!"]; c [pos="0,-150!"];
+            a -> b [color="red:blue"]; a -> c [color="red:blue:green"];
+        """)
+        self.assertEqual(report.defects, [])
+
+    def test_transparent_frame(self) -> None:
+        """Skip frames drawn in a transparent color."""
+        report = self.check("""
+            subgraph cluster_x {
+                color=transparent;
+                m [pos="100,0!"]; k [shape=point, style=invis, width=0, pos="100,60!"];
+            }
+            p [pos="-50,40!"]; q [pos="250,40!"];
+            p -> q;
+        """)
+        self.assertEqual(report.defects, [])
+
+    def test_box_on_frame(self) -> None:
+        """Report boxes against a frame line, from inside or outside, but not boxes 8pt clear of it."""
+        report = self.check("""
+            subgraph cluster_x {
+                j [shape=point, style=invis, width=0, pos="-100,-100!"];
+                k [shape=point, style=invis, width=0, pos="300,100!"];
+                a [pos="-73,0!"]; b [pos="100,-74!"];
+            }
+            c [pos="329,0!"];
+        """)
+        self.assertEqual(
+            report.defects,
+            ["a: touches frame cluster_x", "c: touches frame cluster_x"],
+        )
+
     def test_gradient(self) -> None:
         """Report an arrow passing through boxes filled with gradients."""
         report = self.check("""
@@ -352,7 +448,10 @@ class CheckTest(unittest.TestCase):
     def test_label_on_frame(self) -> None:
         """Report a label drawn over a frame line."""
         report = self.check("""
-            subgraph cluster_x { label="frame"; x [pos="300,0!"]; k [pos="450,100!", style=invis]; }
+            subgraph cluster_x {
+                label="frame"; x [pos="310,0!"]; k [pos="450,100!", style=invis];
+                j [shape=point, style=invis, width=0, pos="273,-30!"];
+            }
             e [pos="0,0!"];
             e -> x [taillabel="framed", labelangle=8.1, labeldistance=24.85];
         """)
@@ -363,8 +462,12 @@ class CheckTest(unittest.TestCase):
     def test_title(self) -> None:
         """Report a frame title touching an arrow."""
         report = self.check("""
-            subgraph cluster_x { label="frame"; x [pos="0,0!"]; k [pos="200,100!", style=invis]; }
-            p [pos="-200,104!"]; q [pos="400,104!"];
+            subgraph cluster_x {
+                label="frame"; node [height=0.3];
+                p [pos="0,0!"]; q [pos="300,0!"];
+                j [shape=point, style=invis, width=0, pos="-40,-20!"];
+                k [shape=point, style=invis, width=0, pos="340,18!"];
+            }
             p -> q;
         """)
         self.assertEqual(report.defects, ['title "frame": touches p -> q'])
