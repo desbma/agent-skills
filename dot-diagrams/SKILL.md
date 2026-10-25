@@ -47,14 +47,14 @@ Show the user a diagram once `dot-check` reports no defects, or say which remain
 
 ## Graphviz behavior
 
-- To fix an arrow end that stops short at a rounded corner or at the fold of a `note`, widen the box with `width`, or aim that end at the middle of the side facing the arrow with a compass port (`tailport=e`, `headport=w`). In a `dot` layout, a port also reroutes the arrow, and can bend it. Corner ports (`ne`, `sw`, ...) sit on the square corner, off the drawn line. A port shared by two arrows stacks their heads.
+- To fix an arrow end that stops short at a rounded corner or at the fold of a `note`, widen the box with `width`, or aim that end at the middle of the side facing the arrow with a compass port (`tailport=e`, `headport=w`). Aim an arrowhead meeting its box at a shallow angle the same way, at the left or right side when the arrow runs more across than up or down, at the top or bottom otherwise, then move the boxes farther apart if `dot-check` still reports it. In a `dot` layout, a port also reroutes the arrow, and can bend it. Corner ports (`ne`, `sw`, ...) sit on the square corner, off the drawn line. A port shared by two arrows stacks their heads.
 - `samehead` and `sametail` on `constraint=false` edges can start or end an arrow away from its node.
 - `dot` chooses the order within each row itself: `rank=same` fixes a row, but `group`, `weight` and invisible edges only nudge the order. When the drawing needs the order within rows set too, pin positions by hand with `neato`: `layout=neato`, `inputscale=72` for positions in points, `pos="x,y!"` on every node, `splines=line`, not `splines=true`, whose arrows detour around boxes and out of frames. Then:
   - `Layout type: "neato" not recognized` means its plugin is missing: Debian and Ubuntu ship it in its own package, `libgvplugin-neato-layout8`, for the user to install.
-  - A frame hugs its nodes, ignores `margin`, and its title lands on them: pad it with two invisible corner nodes, `[shape=point, style=invis, width=0, pos="x,y!"]`, 8pt beyond its outer boxes, and 28pt above the top one when the frame has a title. `width=0` keeps them from taking the size set by the frame's `node [width=...]`.
+  - A frame hugs its nodes, ignores `margin`, and its title lands on them: pad it with two invisible corner nodes, `[shape=point, style=invis, width=0, pos="x,y!"]`, the same distance beyond its outer boxes on every side: 8pt, or 16pt when an arrow crosses the frame. Add 20pt more at the top when the frame has a title. `width=0` keeps them from taking the size set by the frame's `node [width=...]`.
   - Nested frames are not drawn: declare the inner frame on its own, and place its nodes inside the outer one.
   - A `label` or `xlabel` on a sloped arrow may be drawn across it: place it with `taillabel`, `labelangle` and `labeldistance` instead.
-- Place boxes yourself, not with a scripted search over positions.
+- Place boxes yourself: try a change and read what `dot-check` reports, rather than working out its effects in advance or running a scripted search over positions.
 
 ## Source
 

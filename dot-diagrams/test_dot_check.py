@@ -196,6 +196,15 @@ class CheckTest(unittest.TestCase):
         """)
         self.assertEqual(report.defects, [])
 
+    def test_compound_in_frame(self) -> None:
+        """Report an arrowhead clipped to a frame against the frame around it."""
+        report = self.check("""
+            layout=dot; compound=true;
+            subgraph cluster_outer { subgraph cluster_inner { a; } }
+            a -> b [ltail=cluster_inner, dir=back];
+        """)
+        self.assertEqual(report.defects, ["a -> b: tail touches frame cluster_outer"])
+
     def test_inside(self) -> None:
         """Report an arrow starting from the middle of its box."""
         report = self.check("""
@@ -252,8 +261,8 @@ class CheckTest(unittest.TestCase):
             }
             subgraph cluster_inner {
                 m [pos="200,0!"];
-                l [shape=point, style=invis, width=0, pos="165,-26!"];
-                n [shape=point, style=invis, width=0, pos="235,26!"];
+                l [shape=point, style=invis, width=0, pos="157,-34!"];
+                n [shape=point, style=invis, width=0, pos="243,34!"];
             }
             p [pos="200,-150!"];
             p -> m;
@@ -347,6 +356,24 @@ class CheckTest(unittest.TestCase):
             report.defects,
             ["a: touches frame cluster_x", "c: touches frame cluster_x"],
         )
+
+    def test_arrowhead_on_frame(self) -> None:
+        """Report an arrowhead too close to a frame line, but not one entering a frame padded 16pt."""
+        report = self.check("""
+            subgraph cluster_x {
+                m [pos="0,0!"];
+                j [shape=point, style=invis, width=0, pos="-35,-31!"];
+                k [shape=point, style=invis, width=0, pos="35,31!"];
+            }
+            subgraph cluster_y {
+                n [pos="300,0!"];
+                l [shape=point, style=invis, width=0, pos="257,-34!"];
+                o [shape=point, style=invis, width=0, pos="343,34!"];
+            }
+            p [pos="0,-150!"]; q [pos="300,-150!"];
+            p -> m; q -> n;
+        """)
+        self.assertEqual(report.defects, ["p -> m: head touches frame cluster_x"])
 
     def test_gradient(self) -> None:
         """Report an arrow passing through boxes filled with gradients."""
@@ -493,7 +520,7 @@ class CheckTest(unittest.TestCase):
         """Report a label drawn over a frame line."""
         report = self.check("""
             subgraph cluster_x {
-                label="frame"; x [pos="310,0!"]; k [pos="450,100!", style=invis];
+                label="frame"; x [pos="316,0!"]; k [pos="450,100!", style=invis];
                 j [shape=point, style=invis, width=0, pos="273,-30!"];
             }
             e [pos="0,0!"];

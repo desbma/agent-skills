@@ -26,7 +26,7 @@ END_TOLERANCE = 2.0
 MIN_ARROWHEAD_ANGLE = 40.0
 # Smallest gap between two arrowheads, in points
 ARROWHEAD_GAP = 2.0
-# Smallest gap between a box and a frame line, in points
+# Smallest gap between a box or arrowhead and a frame line, in points
 FRAME_GAP = 4.0
 # Corner radius of rounded boxes, capped at a third of their shorter side, in points
 CORNER_RADIUS = 12.0
@@ -467,16 +467,20 @@ def check(graph: dict[str, Any]) -> Report:
         for frame in frames.values():
             if gap(node.lines, frame.lines) < FRAME_GAP:
                 defects.append(f"{node.name}: touches {frame.name}")
-    # Drawn arrowheads, with the arrow and the end they belong to
-    arrowheads = [
-        (edge, kind, end.arrowhead)
+    ends_with_arrowheads = [
+        (edge, kind, end)
         for edge in edges
         for kind, end in edge.ends.items()
         if end.arrowhead
     ]
-    pairs = itertools.combinations(arrowheads, 2)
-    for (a, a_kind, a_lines), (b, b_kind, b_lines) in pairs:
-        if gap(a_lines, b_lines) < ARROWHEAD_GAP:
+    for edge, kind, end in ends_with_arrowheads:
+        for frame in frames.values():
+            # An arrow clipped to a frame by ltail or lhead ends on its line
+            if frame is not end.outline and gap(end.arrowhead, frame.lines) < FRAME_GAP:
+                defects.append(f"{edge.name}: {kind} touches {frame.name}")
+    pairs = itertools.combinations(ends_with_arrowheads, 2)
+    for (a, a_kind, a_end), (b, b_kind, b_end) in pairs:
+        if gap(a_end.arrowhead, b_end.arrowhead) < ARROWHEAD_GAP:
             defects.append(f"{a.name}: {a_kind} overlaps the {b_kind} of {b.name}")
     for i, label in enumerate(labels):
         for edge in edges:
