@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for the diagram layout checker."""
 
+import contextlib
 import importlib.util
 import os
 import re
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Generator
 from importlib.machinery import ModuleSpec, SourceFileLoader
 from pathlib import Path
 from unittest import mock
@@ -23,11 +25,23 @@ HEADER = (
     'fontname="DejaVu Sans,sans-serif"; node [fontname="DejaVu Sans,sans-serif"];'
     'edge [fontname="DejaVu Sans,sans-serif"];'
 )
+# Line printed when Graphviz has no neato layout
+NEATO_WARNING = "Warning: the neato layout is missing, Debian and Ubuntu ship it in the libgvplugin-neato-layout8 package"
 
 
 def without_numbers(lines: list[str]) -> list[str]:
     """Replace the numbers in LINES by N."""
     return [re.sub(r"\d+(\.\d+)?", "N", line) for line in lines]
+
+
+def messages(findings: list["dot_check.Finding"]) -> list[str]:
+    """Return the messages of FINDINGS, without their positions."""
+    return [message for message, _ in findings]
+
+
+def positions(findings: list["dot_check.Finding"]) -> list[tuple[int, int]]:
+    """Return the positions of FINDINGS, rounded to the point."""
+    return [(round(x), round(y)) for _, (x, y) in findings]
 
 
 class CheckTest(unittest.TestCase):
@@ -38,7 +52,11 @@ class CheckTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "graph.dot"
             path.write_text(f"digraph {{ {HEADER} {body} }}")
-            return dot_check.check(dot_check.render(path))
+            return dot_check.check(*dot_check.render(path))
+
+    def assert_no_defects(self, body: str) -> None:
+        """Assert that a pinned digraph with BODY has no defect."""
+        self.assertEqual(messages(self.check(body).defects), [])
 
     def test_clean(self) -> None:
         """Report nothing on attached arrows, at either end, with a label clear of everything."""
@@ -47,29 +65,84 @@ class CheckTest(unittest.TestCase):
             a -> b [taillabel="lab", labelangle=30, labeldistance=5];
             a -> c [dir=both];
         """)
-        self.assertEqual(report.defects, [])
-        self.assertEqual(report.crossings, [])
+        self.assertEqual(messages(report.defects), [])
+        self.assertEqual(messages(report.crossings), [])
 
     def test_formatted(self) -> None:
         """Take the differently formatted runs of a label as one line."""
-        report = self.check("""
+        self.assert_no_defects("""
             a [pos="0,0!"]; b [pos="300,0!"];
             a -> b [taillabel=<<b>bold</b> plain>, labelangle=30, labeldistance=5];
         """)
-        self.assertEqual(report.defects, [])
+
+    def test_several_graphs(self) -> None:
+        """Refuse a file holding more than one graph."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "graph.dot"
+            path.write_text("graph { a; }\ngraph { b; }\n")
+            with self.assertRaisesRegex(ValueError, "more than one graph"):
+                dot_check.render(path)
 
     def test_size(self) -> None:
-        """Measure the drawing."""
-        report = self.check('a [pos="0,0!"]; b [pos="200,100!"];')
-        self.assertEqual(report.size, (254, 136))
+        """Measure the SVG, its margin, scale and rotation included."""
+        for attributes, size in (
+            ("", (262, 144)),
+            ('size="2,2";', (144, 79)),
+            ("rotate=90;", (144, 262)),
+        ):
+            with self.subTest(attributes):
+                report = self.check(f'{attributes} a [pos="0,0!"]; b [pos="200,100!"];')
+                self.assertEqual(report.size, size)
 
     def test_thick(self) -> None:
         """Find the tip of an arrowhead wider than long."""
-        report = self.check("""
+        self.assert_no_defects("""
             a [pos="0,0!"]; b [pos="200,0!"];
             a -> b [penwidth=12];
         """)
-        self.assertEqual(report.defects, [])
+
+    def test_thick_border(self) -> None:
+        """Measure arrow ends and arrowhead angles against the edge of a thick outline, not its middle."""
+        report = self.check("""
+            a [pos="0,0!"]; b [pos="200,0!", penwidth=5];
+            a -> b;
+            c [pos="0,-100!", penwidth=5]; d [pos="200,-100!"];
+            c -> d [tailclip=false];
+            e [pos="0,-167!", width=2]; f [pos="200,-300!", width=2, penwidth=5];
+            e -> f;
+        """)
+        self.assertEqual(
+            without_numbers(messages(report.defects)),
+            [
+                "c -> d: tail Npt off the outline of c",
+                "e -> f: head meets the outline of f at N°",
+            ],
+        )
+
+    def test_thick_label_border(self) -> None:
+        """Measure arrow ends against the width of their outline's own line, not of a thicker one in its label."""
+        report = self.check("""
+            a [pos="0,0!", width=2, height=1, style=rounded,
+               label=<<table border="3"><tr><td>a</td></tr></table>>];
+            b [pos="300,125!", width=2, height=1];
+            a -> b;
+        """)
+        self.assertEqual(
+            without_numbers(messages(report.defects)),
+            ["a -> b: tail Npt off the outline of a, at a rounded corner"],
+        )
+
+    def test_transparent_border(self) -> None:
+        """Measure arrow ends against the fill of a box whose thick outline is transparent."""
+        report = self.check("""
+            a [pos="0,0!"];
+            b [pos="200,0!", penwidth=5, color=transparent, style=filled, fillcolor=lightgray];
+            a -> b;
+        """)
+        self.assertEqual(
+            without_numbers(messages(report.defects)),
+            ["a -> b: head Npt off the outline of b"],
+        )
 
     def test_rounded_corner(self) -> None:
         """Report arrow ends on the square corner of a rounded box, naming the corner only there."""
@@ -78,13 +151,17 @@ class CheckTest(unittest.TestCase):
             a [pos="0,0!"]; b [pos="200,100!"]; c [pos="0,100!"];
             a -> b [tailport=ne, headport=sw];
             c -> b [tailclip=false];
+            d [pos="0,-200!", penwidth=5]; e [pos="200,-67!", penwidth=5];
+            d -> e;
         """)
         self.assertEqual(
-            without_numbers(report.defects),
+            without_numbers(messages(report.defects)),
             [
                 "a -> b: tail Npt off the outline of a, at a rounded corner",
                 "a -> b: head Npt off the outline of b, at a rounded corner",
                 "c -> b: tail Npt off the outline of c",
+                "d -> e: tail Npt off the outline of d, at a rounded corner",
+                "d -> e: head Npt off the outline of e, at a rounded corner",
             ],
         )
 
@@ -97,12 +174,13 @@ class CheckTest(unittest.TestCase):
             d -> c [dir=back, tailport=n];
         """)
         self.assertEqual(
-            without_numbers(report.defects),
+            without_numbers(messages(report.defects)),
             [
                 "a -> b: head meets the outline of b at N°",
                 "d -> c: tail meets the outline of d at N°",
             ],
         )
+        self.assertEqual(positions(report.defects), [(231, 4), (231, 204)])
 
     def test_steep_arrowhead(self) -> None:
         """Report an arrowhead meeting its box at 35°, but not one at 45°."""
@@ -113,33 +191,30 @@ class CheckTest(unittest.TestCase):
             c -> d [headport=n];
         """)
         self.assertEqual(
-            report.defects, ["a -> b: head meets the outline of b at 35.0°"]
+            messages(report.defects), ["a -> b: head meets the outline of b at 35.0°"]
         )
 
     def test_corner_arrowhead(self) -> None:
         """Measure an arrowhead meeting a square corner against the side it lies along."""
-        report = self.check("""
+        self.assert_no_defects("""
             a [pos="400,18!"]; b [pos="200,0!"]; c [pos="0,-18!"];
             a -> b [headport=ne];
             c -> b [headport=sw];
         """)
-        self.assertEqual(report.defects, [])
 
     def test_collapsed_arrowhead(self) -> None:
         """Skip the angle of arrowheads drawn at zero size."""
-        report = self.check("""
+        self.assert_no_defects("""
             a [pos="0,0!"]; b [pos="200,0!"];
             a -> b [dir=both, arrowsize=0];
         """)
-        self.assertEqual(report.defects, [])
 
     def test_transparent_arrowhead(self) -> None:
         """Skip arrowheads drawn in a transparent color."""
-        report = self.check("""
+        self.assert_no_defects("""
             a [pos="0,0!"]; b [pos="200,30!"];
             a -> b [headport=n, color="transparent:red"];
         """)
-        self.assertEqual(report.defects, [])
 
     def test_arrowheads_overlap(self) -> None:
         """Report arrowheads drawn over or against each other, but neither close ones still apart nor arrows starting from the same point."""
@@ -153,7 +228,7 @@ class CheckTest(unittest.TestCase):
             g -> h [dir=both, arrowsize=2];
         """)
         self.assertEqual(
-            report.defects,
+            messages(report.defects),
             [
                 "a -> c: head overlaps the head of b -> c",
                 "g -> h: tail overlaps the head of g -> h",
@@ -167,34 +242,32 @@ class CheckTest(unittest.TestCase):
             a -> b;
         """)
         self.assertEqual(
-            without_numbers(report.defects), ["a -> b: tail Npt off the outline of a"]
+            without_numbers(messages(report.defects)),
+            ["a -> b: tail Npt off the outline of a"],
         )
 
     def test_flat_arrowheads(self) -> None:
         """Find the tips of arrowheads ending in a flat side or an open line."""
-        report = self.check("""
+        self.assert_no_defects("""
             a [pos="0,0!"]; b [pos="300,300!"]; c [pos="300,0!"];
             a -> b [dir=both, arrowtail=crow, arrowhead=box];
             a -> c [dir=both, arrowtail=curve, arrowhead=tee];
         """)
-        self.assertEqual(report.defects, [])
 
     def test_sections(self) -> None:
         """Find the end of an arrow drawn in successive colors."""
-        report = self.check("""
+        self.assert_no_defects("""
             a [pos="0,0!"]; b [pos="300,0!"];
             a -> b [dir=none, color="red;0.5:blue"];
         """)
-        self.assertEqual(report.defects, [])
 
     def test_compound(self) -> None:
         """Measure the ends of arrows clipped to frames against the frames."""
-        report = self.check("""
+        self.assert_no_defects("""
             layout=dot; compound=true;
             subgraph cluster_a { a; } subgraph cluster_b { b; }
             a -> b [ltail=cluster_a, lhead=cluster_b];
         """)
-        self.assertEqual(report.defects, [])
 
     def test_compound_in_frame(self) -> None:
         """Report an arrowhead clipped to a frame against the frame around it."""
@@ -203,7 +276,9 @@ class CheckTest(unittest.TestCase):
             subgraph cluster_outer { subgraph cluster_inner { a; } }
             a -> b [ltail=cluster_inner, dir=back];
         """)
-        self.assertEqual(report.defects, ["a -> b: tail touches frame cluster_outer"])
+        self.assertEqual(
+            messages(report.defects), ["a -> b: tail touches frame cluster_outer"]
+        )
 
     def test_inside(self) -> None:
         """Report an arrow starting from the middle of its box."""
@@ -212,12 +287,14 @@ class CheckTest(unittest.TestCase):
             a -> b [tailclip=false];
         """)
         self.assertEqual(
-            without_numbers(report.defects), ["a -> b: tail Npt off the outline of a"]
+            without_numbers(messages(report.defects)),
+            ["a -> b: tail Npt off the outline of a"],
         )
+        self.assertEqual(positions(report.defects), [(31, 22)])
 
     def test_unbordered(self) -> None:
         """Skip invisible arrows, and the ends of arrows on nodes drawn without an outline, inside a frame or not."""
-        report = self.check("""
+        self.assert_no_defects("""
             a [pos="0,0!"]; b [pos="200,0!"];
             w [pos="100,100!", shape=point, style=invis];
             h [pos="200,100!", shape=plain, label=<<table><tr><td>h</td></tr></table>>];
@@ -229,7 +306,6 @@ class CheckTest(unittest.TestCase):
             a -> b [style=invis, tailclip=false];
             a -> b [color=transparent, tailclip=false];
         """)
-        self.assertEqual(report.defects, [])
 
     def test_through(self) -> None:
         """Report an arrow passing through a box other than its ends."""
@@ -237,7 +313,7 @@ class CheckTest(unittest.TestCase):
             a [pos="0,0!"]; b [pos="150,0!"]; c [pos="300,0!"];
             a -> c;
         """)
-        self.assertEqual(report.defects, ["a -> c: passes through b"])
+        self.assertEqual(messages(report.defects), ["a -> c: passes through b"])
 
     def test_through_frame(self) -> None:
         """Report an arrow passing through a frame, but not one leaving it once."""
@@ -250,11 +326,14 @@ class CheckTest(unittest.TestCase):
             p [pos="-50,35!"]; q [pos="250,35!"];
             p -> q; m -> p;
         """)
-        self.assertEqual(report.defects, ["p -> q: passes through frame cluster_x"])
+        self.assertEqual(
+            messages(report.defects), ["p -> q: passes through frame cluster_x"]
+        )
+        self.assertEqual(positions(report.defects), [(141, 22)])
 
     def test_frame_in_frame(self) -> None:
         """Count a box drawn inside a frame as inside it, though declared in another frame."""
-        report = self.check("""
+        self.assert_no_defects("""
             subgraph cluster_outer {
                 j [shape=point, style=invis, width=0, pos="-60,-60!"];
                 k [shape=point, style=invis, width=0, pos="400,60!"];
@@ -267,11 +346,10 @@ class CheckTest(unittest.TestCase):
             p [pos="200,-150!"];
             p -> m;
         """)
-        self.assertEqual(report.defects, [])
 
     def test_frame_corner(self) -> None:
         """Count an arrow leaving its frame through a corner once."""
-        report = self.check("""
+        self.assert_no_defects("""
             subgraph cluster_x {
                 m [pos="0,0!"];
                 j [shape=point, style=invis, width=0, pos="-50,-50!"];
@@ -279,7 +357,6 @@ class CheckTest(unittest.TestCase):
             }
             p [pos="200,200!"]; m -> p;
         """)
-        self.assertEqual(report.defects, [])
 
     def test_out_of_frame(self) -> None:
         """Report an arrow leaving its frame and coming back."""
@@ -293,7 +370,7 @@ class CheckTest(unittest.TestCase):
             a -> b;
         """)
         self.assertEqual(
-            report.defects, ["a -> b: leaves and re-enters frame cluster_x"]
+            messages(report.defects), ["a -> b: leaves and re-enters frame cluster_x"]
         )
 
     def test_out_of_frame_to_outside(self) -> None:
@@ -309,12 +386,12 @@ class CheckTest(unittest.TestCase):
             a -> b;
         """)
         self.assertEqual(
-            report.defects, ["a -> b: leaves and re-enters frame cluster_x"]
+            messages(report.defects), ["a -> b: leaves and re-enters frame cluster_x"]
         )
 
     def test_multicolored_out_of_frame(self) -> None:
         """Count a multicolored arrow leaving its frame once, straight or sloped."""
-        report = self.check("""
+        self.assert_no_defects("""
             subgraph cluster_x {
                 a [pos="0,0!"];
                 j [shape=point, style=invis, width=0, pos="-40,-30!"];
@@ -323,11 +400,10 @@ class CheckTest(unittest.TestCase):
             b [pos="150,150!"]; c [pos="0,-150!"];
             a -> b [color="red:blue"]; a -> c [color="red:blue:green"];
         """)
-        self.assertEqual(report.defects, [])
 
     def test_transparent_frame(self) -> None:
         """Skip frames drawn in a transparent color."""
-        report = self.check("""
+        self.assert_no_defects("""
             subgraph cluster_x {
                 color=transparent;
                 m [pos="100,0!"]; k [shape=point, style=invis, width=0, pos="100,60!"];
@@ -335,12 +411,10 @@ class CheckTest(unittest.TestCase):
             p [pos="-50,40!"]; q [pos="250,40!"];
             p -> q;
         """)
-        self.assertEqual(report.defects, [])
 
     def test_empty_subgraphs(self) -> None:
         """Skip frames and subgraphs holding no node."""
-        report = self.check("layout=dot; subgraph cluster_x {} subgraph y {} a;")
-        self.assertEqual(report.defects, [])
+        self.assert_no_defects("layout=dot; subgraph cluster_x {} subgraph y {} a;")
 
     def test_box_on_frame(self) -> None:
         """Report boxes against a frame line, from inside or outside, but not boxes 8pt clear of it."""
@@ -353,9 +427,10 @@ class CheckTest(unittest.TestCase):
             c [pos="329,0!"];
         """)
         self.assertEqual(
-            report.defects,
+            messages(report.defects),
             ["a: touches frame cluster_x", "c: touches frame cluster_x"],
         )
+        self.assertEqual(positions(report.defects), [(4, 122), (406, 122)])
 
     def test_arrowhead_on_frame(self) -> None:
         """Report an arrowhead too close to a frame line, but not one entering a frame padded 16pt."""
@@ -373,7 +448,9 @@ class CheckTest(unittest.TestCase):
             p [pos="0,-150!"]; q [pos="300,-150!"];
             p -> m; q -> n;
         """)
-        self.assertEqual(report.defects, ["p -> m: head touches frame cluster_x"])
+        self.assertEqual(
+            messages(report.defects), ["p -> m: head touches frame cluster_x"]
+        )
 
     def test_gradient(self) -> None:
         """Report an arrow passing through boxes filled with gradients."""
@@ -384,16 +461,16 @@ class CheckTest(unittest.TestCase):
             a -> b;
         """)
         self.assertEqual(
-            report.defects, ["a -> b: passes through c", "a -> b: passes through d"]
+            messages(report.defects),
+            ["a -> b: passes through c", "a -> b: passes through d"],
         )
 
     def test_transparent_node(self) -> None:
         """Let arrows pass through nodes drawn in transparent colors."""
-        report = self.check("""
+        self.assert_no_defects("""
             a [pos="0,0!"]; b [pos="300,0!"]; c [pos="150,0!", color=transparent, label=""];
             a -> b;
         """)
-        self.assertEqual(report.defects, [])
 
     def test_through_table(self) -> None:
         """Report an arrow passing through the borders of an HTML table."""
@@ -402,16 +479,15 @@ class CheckTest(unittest.TestCase):
             c [pos="150,0!", shape=plain, label=<<table><tr><td>c</td></tr></table>>];
             a -> b;
         """)
-        self.assertEqual(report.defects, ["a -> b: passes through c"])
+        self.assertEqual(messages(report.defects), ["a -> b: passes through c"])
 
     def test_parallel(self) -> None:
         """Follow each line of a multicolored arrow on its own."""
-        report = self.check("""
+        self.assert_no_defects("""
             splines=true;
             a [pos="0,0!"]; b [pos="300,0!"]; c [pos="150,0!"];
             a -> b [color="red:blue"];
         """)
-        self.assertEqual(report.defects, [])
 
     def test_crossing(self) -> None:
         """Count crossing arrows, but not arrows meeting at a shared end."""
@@ -421,8 +497,32 @@ class CheckTest(unittest.TestCase):
             e [pos="0,400!"]; f [pos="300,400!"];
             e -> f [headport=w, dir=none]; b -> f [headport=w, dir=none];
         """)
-        self.assertEqual(report.defects, [])
-        self.assertEqual(report.crossings, ["a -> d crosses b -> c"])
+        self.assertEqual(messages(report.defects), [])
+        self.assertEqual(messages(report.crossings), ["a -> d crosses b -> c"])
+
+    def test_positions(self) -> None:
+        """Place findings in points from the top left corner of the SVG, its margin, scale and rotation included, whatever the graph's id and class."""
+        for attributes, position in (
+            # Graphviz accepts the pinning mark of a point on the pad, and ignores it
+            ('pad="0.2,0.1!"', (191.4, 125.2)),
+            ('size="2,2"', (72.0, 48.5)),
+            ("rotate=90", (122.0, 181.0)),
+            ('id="overview"', (181.0, 122.0)),
+            ('class="overview"', (181.0, 122.0)),
+        ):
+            with self.subTest(attributes):
+                report = self.check(f"""
+                    {attributes};
+                    a [pos="0,0!"]; b [pos="0,200!"]; c [pos="300,0!"]; d [pos="300,200!"];
+                    a -> d; b -> c;
+                """)
+                self.assertEqual(
+                    [
+                        (message, (round(x, 1), round(y, 1)))
+                        for message, (x, y) in report.crossings
+                    ],
+                    [("a -> d crosses b -> c", position)],
+                )
 
     def test_regular_edge_label(self) -> None:
         """Report an ordinary label drawn across its sloped arrow."""
@@ -430,7 +530,9 @@ class CheckTest(unittest.TestCase):
             a [pos="0,0!"]; b [pos="300,200!"];
             a -> b [label="across"];
         """)
-        self.assertEqual(report.defects, ['label "across" of a -> b: touches a -> b'])
+        self.assertEqual(
+            messages(report.defects), ['label "across" of a -> b: touches a -> b']
+        )
 
     def test_label_on_line(self) -> None:
         """Report a label drawn across its own arrow."""
@@ -438,15 +540,17 @@ class CheckTest(unittest.TestCase):
             a [pos="0,0!"]; b [pos="300,0!"];
             a -> b [taillabel="across", labelangle=0, labeldistance=10];
         """)
-        self.assertEqual(report.defects, ['label "across" of a -> b: touches a -> b'])
+        self.assertEqual(
+            messages(report.defects), ['label "across" of a -> b: touches a -> b']
+        )
+        self.assertEqual(positions(report.defects), [(158, 23)])
 
     def test_transparent_label(self) -> None:
         """Skip labels drawn in a transparent color."""
-        report = self.check("""
+        self.assert_no_defects("""
             a [pos="0,0!"]; b [pos="300,0!"];
             a -> b [taillabel="hidden", labelfontcolor=transparent, labelangle=0, labeldistance=10];
         """)
-        self.assertEqual(report.defects, [])
 
     def test_label_on_arrowhead(self) -> None:
         """Report a label drawn over an arrowhead."""
@@ -454,7 +558,9 @@ class CheckTest(unittest.TestCase):
             a [pos="0,0!"]; b [pos="300,0!"];
             a -> b [arrowsize=2, headlabel="x", labelangle=0, labeldistance=1];
         """)
-        self.assertEqual(report.defects, ['label "x" of a -> b: touches a -> b'])
+        self.assertEqual(
+            messages(report.defects), ['label "x" of a -> b: touches a -> b']
+        )
 
     def test_label_of_transparent(self) -> None:
         """Report a label of a transparent arrow drawn over a box."""
@@ -462,7 +568,9 @@ class CheckTest(unittest.TestCase):
             a [pos="0,0!"]; b [pos="300,0!"];
             a -> b [color=transparent, taillabel="shown", labelangle=180, labeldistance=2.7];
         """)
-        self.assertEqual(report.defects, ['label "shown" of a -> b: touches a'])
+        self.assertEqual(
+            messages(report.defects), ['label "shown" of a -> b: touches a']
+        )
 
     def test_node_text(self) -> None:
         """Report the text of a node without outline drawn over an arrow, but not over its own arrows."""
@@ -471,7 +579,9 @@ class CheckTest(unittest.TestCase):
             d [pos="0,100!", shape=plain]; e [pos="300,100!", shape=plain];
             a -> b; d -> e;
         """)
-        self.assertEqual(report.defects, ['label "bare" of c: touches a -> b'])
+        self.assertEqual(
+            messages(report.defects), ['label "bare" of c: touches a -> b']
+        )
 
     def test_external_label(self) -> None:
         """Report the external label of a box drawn over the box's own arrow."""
@@ -479,7 +589,7 @@ class CheckTest(unittest.TestCase):
             a [pos="0,0!", xlabel="outer"]; b [pos="-200,100!"];
             a -> b;
         """)
-        self.assertIn('label "outer" of a: touches a -> b', report.defects)
+        self.assertIn('label "outer" of a: touches a -> b', messages(report.defects))
 
     def test_label_on_box(self) -> None:
         """Report a label drawn over a box."""
@@ -488,7 +598,7 @@ class CheckTest(unittest.TestCase):
             a -> b [taillabel="boxed", labelangle=0, labeldistance=0.5];
         """)
         self.assertEqual(
-            report.defects,
+            messages(report.defects),
             [
                 'label "boxed" of a -> b: touches a -> b',
                 'label "boxed" of a -> b: touches a',
@@ -502,7 +612,9 @@ class CheckTest(unittest.TestCase):
             a [pos="0,0!"]; b [pos="300,0!"];
             a -> b [taillabel="hidden", labelangle=180, labeldistance=7.2];
         """)
-        self.assertEqual(report.defects, ['label "hidden" of a -> b: touches a'])
+        self.assertEqual(
+            messages(report.defects), ['label "hidden" of a -> b: touches a']
+        )
 
     def test_label_on_label(self) -> None:
         """Report labels drawn over each other."""
@@ -512,7 +624,7 @@ class CheckTest(unittest.TestCase):
             c -> d [taillabel="two", labelangle=-60, labeldistance=3.5];
         """)
         self.assertEqual(
-            report.defects,
+            messages(report.defects),
             ['label "one" of a -> b: touches label "two" of c -> d'],
         )
 
@@ -527,7 +639,8 @@ class CheckTest(unittest.TestCase):
             e -> x [taillabel="framed", labelangle=8.1, labeldistance=24.85];
         """)
         self.assertEqual(
-            report.defects, ['label "framed" of e -> x: touches frame "frame"']
+            messages(report.defects),
+            ['label "framed" of e -> x: touches frame "frame"'],
         )
 
     def test_title(self) -> None:
@@ -541,7 +654,7 @@ class CheckTest(unittest.TestCase):
             }
             p -> q;
         """)
-        self.assertEqual(report.defects, ['title "frame": touches p -> q'])
+        self.assertEqual(messages(report.defects), ['title "frame": touches p -> q'])
 
     def test_borderless_title(self) -> None:
         """Report the title of a frame drawn without border touching an arrow."""
@@ -550,7 +663,7 @@ class CheckTest(unittest.TestCase):
             p [pos="-200,104!"]; q [pos="400,104!"];
             p -> q;
         """)
-        self.assertEqual(report.defects, ['title "frame": touches p -> q'])
+        self.assertEqual(messages(report.defects), ['title "frame": touches p -> q'])
 
 
 class GeometryTest(unittest.TestCase):
@@ -598,7 +711,7 @@ class MainTest(unittest.TestCase):
         """)
         self.assertEqual(
             result.stdout,
-            "Crossing: a -> d crosses b -> c\nSize: 354 × 236pt, 0 defects, 1 crossing\n",
+            "Crossing at (181, 122): a -> d crosses b -> c\nSize: 362 × 244pt, 0 defects, 1 crossing\n",
         )
         self.assertEqual(result.returncode, 0)
 
@@ -610,7 +723,7 @@ class MainTest(unittest.TestCase):
         """)
         self.assertEqual(
             result.stdout,
-            "Defect: a -> c: passes through b\nSize: 354 × 36pt, 1 defect, 0 crossings\n",
+            "Defect at (154, 22): a -> c: passes through b\nSize: 362 × 44pt, 1 defect, 0 crossings\n",
         )
         self.assertEqual(result.returncode, 1)
 
@@ -624,8 +737,8 @@ class MainTest(unittest.TestCase):
         self.assertRegex(
             result.stdout,
             r'^Defect: font "DejaVu Sans Bold": measured with /.*/DejaVuSans-Bold\.ttf, drawn with /.*\n'
-            r"Defect: a -> c: passes through b\n"
-            r"Size: 254 × 36pt, 2 defects, 0 crossings\n$",
+            r"Defect at \(104, 22\): a -> c: passes through b\n"
+            r"Size: 262 × 44pt, 2 defects, 0 crossings\n$",
         )
         self.assertEqual(result.returncode, 1)
 
@@ -646,8 +759,52 @@ class MainTest(unittest.TestCase):
     def test_font_list(self) -> None:
         """Check a font list starting with a dash, and succeed."""
         result = self.run_main('a [pos="0,0!", fontname="-apple-system,sans-serif"];')
-        self.assertEqual(result.stdout, "Size: 54 × 36pt, 0 defects, 0 crossings\n")
+        self.assertEqual(result.stdout, "Size: 62 × 44pt, 0 defects, 0 crossings\n")
         self.assertEqual(result.returncode, 0)
+
+    @contextlib.contextmanager
+    def without_neato(self) -> Generator[None]:
+        """Hide Graphviz's neato layout from the runs within."""
+        log = subprocess.run(
+            ["dot", "-v", "-Tjson"],
+            input="digraph {}",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            check=True,
+            text=True,
+        ).stderr
+        libdir = Path(re.findall(r'^libdir = "(.*)"$', log, re.MULTILINE)[0])
+        with tempfile.TemporaryDirectory() as tmp:
+            for plugin in libdir.glob("libgvplugin_*"):
+                if "neato" not in plugin.name:
+                    (Path(tmp) / plugin.name).symlink_to(plugin)
+            with mock.patch.dict(os.environ, GVBINDIR=tmp):
+                # Lists the plugins found in GVBINDIR for Graphviz to load
+                subprocess.run(
+                    ["dot", "-c"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                )
+                yield
+
+    def test_missing_neato(self) -> None:
+        """Warn that the neato layout is missing without counting it as a defect, and succeed."""
+        with self.without_neato():
+            result = self.run_main("layout=dot; a;")
+        self.assertEqual(
+            result.stdout,
+            f"{NEATO_WARNING}\nSize: 62 × 44pt, 0 defects, 0 crossings\n",
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_missing_neato_layout(self) -> None:
+        """Warn that the neato layout is missing also when the diagram uses it, and fail."""
+        with self.without_neato():
+            result = self.run_main("a;")
+        self.assertIn(f"{NEATO_WARNING}\n", result.stdout)
+        self.assertEqual(result.returncode, 1)
 
 
 if __name__ == "__main__":

@@ -17,9 +17,11 @@ type Segment = tuple[Point, Point]
 type Polyline = list[Point]
 # Left, bottom, right, top
 type Rect = tuple[float, float, float, float]
+# Layout problem, and where it is drawn
+type Finding = tuple[str, Point]
 
-# Largest gap between an arrow end and its node's outline still drawn as touching, in points
-ATTACH_TOLERANCE = 1.5
+# Largest gap between an arrow end and the line of its node's outline still drawn as touching, in points
+ATTACH_TOLERANCE = 1.0
 # Distance from an arrow end within which another arrow meets it rather than crosses it, in points
 END_TOLERANCE = 2.0
 # Smallest angle between an arrowhead and the outline it touches, in degrees
@@ -40,18 +42,30 @@ TEXT_ASCENT = 0.7
 # Points sampled per Bézier segment and per ellipse
 BEZIER_STEPS = 16
 ELLIPSE_STEPS = 64
+# Style of an xdot operation setting the width of the lines drawn after it
+LINE_WIDTH = re.compile(r"setlinewidth\((.*)\)")
+# Size Graphviz's SVG output gives the drawing, in points
+SVG_SIZE = re.compile(r'<svg width="(\S+)pt" height="(\S+)pt"')
+# Transform of the group Graphviz's SVG output draws the graph in, from layout points with y negated
+SVG_TRANSFORM = re.compile(
+    r'<g id="[^"]*" class="graph[^"]*" transform="scale\((\S+) (\S+)\) rotate\((\S+)\) translate\((\S+) (\S+)\)"'
+)
 # Line of Graphviz's verbose output naming the font it measures a font name's text with, by its file when known
 FONT_RESOLUTION = re.compile(
     r'fontname: (?:"(.*)" resolved to: (?:.*" )?(.+)|unable to resolve "(.*)")'
 )
+# Line of Graphviz's verbose output listing the installed layout engines
+LAYOUTS = re.compile(r"^\s*layout\s*:\s*(.*)$", re.MULTILINE)
 
 
 @dataclass
 class Report:
     """Layout problems and size of a rendered diagram."""
 
-    defects: list[str]
-    crossings: list[str]
+    # Problems placed in points from the top left corner of the SVG, its margin included
+    defects: list[Finding]
+    crossings: list[Finding]
+    # Size of the SVG, its margin included, in points
     size: tuple[float, float]
 
 
@@ -61,6 +75,8 @@ class Shape:
 
     name: str
     lines: list[Polyline]
+    # Drawn width of each line, in points
+    line_widths: list[float]
     # Whether the outline is a box with rounded corners
     rounded_box: bool = False
 
@@ -174,6 +190,21 @@ def texts(ops: list[dict[str, Any]]) -> list[tuple[str, Rect]]:
     return result
 
 
+def line_widths(ops: list[dict[str, Any]]) -> list[float]:
+    """Return the drawn width of each line traced from xdot operations, 0 for a transparent one."""
+    widths = []
+    width = 1.0
+    color = ""
+    for op in ops:
+        if op["op"] == "S" and (match := LINE_WIDTH.fullmatch(op["style"])):
+            width = float(match[1])
+        elif op["op"] == "c":
+            color = op["color"]
+        elif op["op"] in "pPLbBeE":
+            widths.append(0.0 if transparent(color) else width)
+    return widths
+
+
 def transparent(color: str) -> bool:
     """Tell whether a color is fully transparent."""
     return color == "transparent" or (len(color) == 9 and color.endswith("00"))
@@ -230,17 +261,18 @@ def point_distance(point: Point, segment: Segment) -> float:
     return math.dist(point, (ax + t * dx, ay + t * dy))
 
 
-def gap(a: list[Polyline], b: list[Polyline]) -> float:
-    """Return the distance between two sets of polylines."""
-    if crossings(a, b):
-        return 0.0
-    return min(
-        point_distance(point, segment)
+def near(a: list[Polyline], b: list[Polyline], limit: float) -> Point | None:
+    """Return a point of one of two sets of polylines where they come closer than a limit, None if they do not."""
+    if points := crossings(a, b):
+        return points[0]
+    distance, point = min(
+        (point_distance(point, segment), point)
         for lines, others in ((a, b), (b, a))
         for line in lines
         for point in line
         for segment in segments(others)
     )
+    return point if distance < limit else None
 
 
 def inside(point: Point, lines: list[Polyline]) -> bool:
@@ -258,13 +290,15 @@ def inside(point: Point, lines: list[Polyline]) -> bool:
     return False
 
 
-def at_rounded_corner(point: Point, lines: list[Polyline]) -> bool:
+def at_rounded_corner(point: Point, box: Shape) -> bool:
     """Tell whether a point lies in the square at a corner of a rounded box where the rounding is drawn."""
-    xs, ys = zip(*(p for line in lines for p in line))
+    xs, ys = zip(*(p for line in box.lines for p in line))
     radius = min(CORNER_RADIUS, (max(xs) - min(xs)) / 3, (max(ys) - min(ys)) / 3)
     # Distances to the nearest vertical and horizontal sides, negative outside
     return all(
-        -ATTACH_TOLERANCE < min(v - min(vs), max(vs) - v) < radius
+        -ATTACH_TOLERANCE - max(box.line_widths) / 2
+        < min(v - min(vs), max(vs) - v)
+        < radius
         for v, vs in ((point[0], xs), (point[1], ys))
     )
 
@@ -300,31 +334,55 @@ def overlap(a: Rect, b: Rect) -> bool:
     )
 
 
-def render(path: Path) -> dict[str, Any]:
-    """Lay out a .dot file and return Graphviz's JSON description of the drawing."""
-    result = subprocess.run(
-        ["dot", "-Tjson", str(path)],
+def render(path: Path) -> tuple[dict[str, Any], str]:
+    """Lay out a .dot file and return Graphviz's JSON description of the drawing, and its SVG."""
+    output = subprocess.run(
+        ["dot", "-Tjson", "-Tsvg", str(path)],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=None,
         check=True,
         text=True,
-    )
-    return json.loads(result.stdout)
+    ).stdout
+    # Graphviz writes one format after the other, then the next graph's
+    graph, end = json.JSONDecoder().raw_decode(output)
+    svg = output[end:]
+    if svg.count("</svg>") != 1:
+        raise ValueError("The file holds more than one graph")
+    return graph, svg
 
 
-def font_defects(path: Path) -> list[str]:
-    """Find the fonts of a .dot file whose text Graphviz measures with another font file than the one drawn."""
-    result = subprocess.run(
+def graphviz_log(path: Path) -> str:
+    """Lay out a .dot file and return Graphviz's verbose output."""
+    return subprocess.run(
         ["dot", "-v", "-Tjson", str(path)],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         check=True,
         text=True,
-    )
+    ).stderr
+
+
+def has_neato() -> bool:
+    """Tell whether Graphviz lists the neato layout engine as installed."""
+    log = subprocess.run(
+        ["dot", "-v", "-Tjson"],
+        input="graph {}",
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        check=True,
+        text=True,
+    ).stderr
+    if not (match := LAYOUTS.search(log)):
+        raise ValueError("Graphviz lists no layout engine in its verbose output")
+    return "neato" in match[1].split()
+
+
+def font_defects(log: str) -> list[str]:
+    """Find the fonts in Graphviz's verbose output whose text it measures with another font file than the one drawn."""
     defects = []
-    for line in result.stderr.splitlines():
+    for line in log.splitlines():
         if not (match := FONT_RESOLUTION.fullmatch(line)):
             continue
         name, measured = match[1] or match[3], match[2]
@@ -343,8 +401,23 @@ def font_defects(path: Path) -> list[str]:
     return defects
 
 
-def check(graph: dict[str, Any]) -> Report:
-    """Find layout defects and arrow crossings in a laid out graph."""
+def in_svg(findings: list[Finding], svg: str) -> list[Finding]:
+    """Move the positions of findings from layout points to points from the top left corner of the SVG drawing them."""
+    if not (match := SVG_TRANSFORM.search(svg)):
+        raise ValueError("Graphviz's SVG output has no graph transform")
+    scale_x, scale_y, angle, shift_x, shift_y = map(float, match.groups())
+    cos, sin = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+    placed = []
+    for message, (x, y) in findings:
+        x, y = x + shift_x, shift_y - y
+        placed.append(
+            (message, (scale_x * (x * cos - y * sin), scale_y * (x * sin + y * cos)))
+        )
+    return placed
+
+
+def check(graph: dict[str, Any], svg: str) -> Report:
+    """Find layout defects and arrow crossings in a laid out graph, placed in its SVG."""
     objects = graph.get("objects", [])
     centers = {}
     nodes = {}
@@ -354,25 +427,29 @@ def check(graph: dict[str, Any]) -> Report:
         if i >= graph["_subgraph_cnt"]:
             x, y = map(float, o["pos"].split(","))
             centers[i] = (x, y)
-            lines = trace(visible(o.get("_draw_", [])) + o.get("_ldraw_", []))
+            draw, ldraw = visible(o.get("_draw_", [])), o.get("_ldraw_", [])
+            lines = trace(draw + ldraw)
             # Nodes drawing no line, like invisible ones or bare text, have none to attach to
             if lines:
                 styles = o.get("style", "").replace(",", " ").split()
                 rounded_box = o.get("shape") in BOXES and "rounded" in styles
-                nodes[i] = Shape(o["name"], lines, rounded_box)
+                # Each xdot attribute starts drawing at the default width
+                widths = line_widths(draw) + line_widths(ldraw)
+                nodes[i] = Shape(o["name"], lines, widths, rounded_box)
             # Text within its node's outline is checked with the outline
             labels.extend(
                 Label(f'label "{text}" of {o["name"]}', rect, None if lines else i)
-                for text, rect in texts(o.get("_ldraw_", []))
+                for text, rect in texts(ldraw)
                 if not lines or not inside(center(rect), lines)
             )
         else:
+            ops = visible(o.get("_draw_", []))
             # Frames drawing no line, like transparent ones, have none to check
-            if lines := trace(visible(o.get("_draw_", []))):
+            if lines := trace(ops):
                 name = (
                     f'frame "{o["label"]}"' if o.get("label") else f"frame {o['name']}"
                 )
-                frames[o["name"]] = Shape(name, lines)
+                frames[o["name"]] = Shape(name, lines, line_widths(ops))
             labels.extend(
                 Label(f'title "{text}"', rect)
                 for text, rect in texts(o.get("_ldraw_", []))
@@ -421,34 +498,48 @@ def check(graph: dict[str, Any]) -> Report:
             )
         )
 
-    defects = []
+    defects: list[Finding] = []
     for edge in edges:
         for kind, end in edge.ends.items():
             if not (outline := end.outline):
                 continue
             sides = segments(outline.lines)
-            off = min(point_distance(end.point, s) for s in sides)
+            # Distance to the nearer edge of the nearest line of the outline
+            off = min(
+                point_distance(end.point, side) - width / 2
+                for line, width in zip(outline.lines, outline.line_widths, strict=True)
+                for side in itertools.pairwise(line)
+            )
             if off > ATTACH_TOLERANCE:
-                corner = outline.rounded_box and at_rounded_corner(
-                    end.point, outline.lines
-                )
+                corner = outline.rounded_box and at_rounded_corner(end.point, outline)
                 defects.append(
-                    f"{edge.name}: {kind} {off:.1f}pt off the outline of {outline.name}"
-                    + ", at a rounded corner" * corner
+                    (
+                        f"{edge.name}: {kind} {off:.1f}pt off the outline of {outline.name}"
+                        + ", at a rounded corner" * corner,
+                        end.point,
+                    )
                 )
             elif end.arrowhead and end.point != end.base:
-                # The base's distance to the outline over the arrowhead's length is the sine
-                # of the angle against a straight side, and follows the outline past the tip
-                clearance = min(point_distance(end.base, s) for s in sides)
+                # How much farther the base lies from the outline than the tip, over the arrowhead's
+                # length, is the sine of the angle against a straight side, and follows the outline
+                # past the tip
+                base_clearance = min(point_distance(end.base, s) for s in sides)
+                tip_clearance = min(point_distance(end.point, s) for s in sides)
+                rise = base_clearance - tip_clearance
                 length = math.dist(end.base, end.point)
-                meeting_angle = math.degrees(math.asin(min(1, clearance / length)))
+                meeting_angle = math.degrees(math.asin(min(1, rise / length)))
                 if meeting_angle < MIN_ARROWHEAD_ANGLE:
                     defects.append(
-                        f"{edge.name}: {kind} meets the outline of {outline.name} at {meeting_angle:.1f}°"
+                        (
+                            f"{edge.name}: {kind} meets the outline of {outline.name} at {meeting_angle:.1f}°",
+                            end.point,
+                        )
                     )
         for i, node in nodes.items():
-            if i not in (edge.tail, edge.head) and crossings(edge.drawn(), node.lines):
-                defects.append(f"{edge.name}: passes through {node.name}")
+            if i not in (edge.tail, edge.head) and (
+                points := crossings(edge.drawn(), node.lines)
+            ):
+                defects.append((f"{edge.name}: passes through {node.name}", points[0]))
         ends = [end.point for end in edge.ends.values()]
         for frame in frames.values():
             # Points where the arrow crosses the outline away from its ends, once each
@@ -462,11 +553,11 @@ def check(graph: dict[str, Any]) -> Report:
             # An arrow with one end inside crosses the outline once, others never
             if len(points) > int(inside_ends == 1):
                 way = "leaves and re-enters" if inside_ends else "passes through"
-                defects.append(f"{edge.name}: {way} {frame.name}")
+                defects.append((f"{edge.name}: {way} {frame.name}", points[0]))
     for node in nodes.values():
         for frame in frames.values():
-            if gap(node.lines, frame.lines) < FRAME_GAP:
-                defects.append(f"{node.name}: touches {frame.name}")
+            if (point := near(node.lines, frame.lines, FRAME_GAP)) is not None:
+                defects.append((f"{node.name}: touches {frame.name}", point))
     ends_with_arrowheads = [
         (edge, kind, end)
         for edge in edges
@@ -476,41 +567,47 @@ def check(graph: dict[str, Any]) -> Report:
     for edge, kind, end in ends_with_arrowheads:
         for frame in frames.values():
             # An arrow clipped to a frame by ltail or lhead ends on its line
-            if frame is not end.outline and gap(end.arrowhead, frame.lines) < FRAME_GAP:
-                defects.append(f"{edge.name}: {kind} touches {frame.name}")
+            if frame is end.outline:
+                continue
+            if (point := near(end.arrowhead, frame.lines, FRAME_GAP)) is not None:
+                defects.append((f"{edge.name}: {kind} touches {frame.name}", point))
     pairs = itertools.combinations(ends_with_arrowheads, 2)
     for (a, a_kind, a_end), (b, b_kind, b_end) in pairs:
-        if gap(a_end.arrowhead, b_end.arrowhead) < ARROWHEAD_GAP:
-            defects.append(f"{a.name}: {a_kind} overlaps the {b_kind} of {b.name}")
+        if (point := near(a_end.arrowhead, b_end.arrowhead, ARROWHEAD_GAP)) is not None:
+            defects.append(
+                (f"{a.name}: {a_kind} overlaps the {b_kind} of {b.name}", point)
+            )
     for i, label in enumerate(labels):
+        position = center(label.rect)
         for edge in edges:
             if label.node not in (edge.tail, edge.head) and touches(
                 label.rect, edge.drawn()
             ):
-                defects.append(f"{label.name}: touches {edge.name}")
+                defects.append((f"{label.name}: touches {edge.name}", position))
         for node in nodes.values():
-            if touches(label.rect, node.lines) or inside(
-                center(label.rect), node.lines
-            ):
-                defects.append(f"{label.name}: touches {node.name}")
+            if touches(label.rect, node.lines) or inside(position, node.lines):
+                defects.append((f"{label.name}: touches {node.name}", position))
         for other in labels[i + 1 :]:
             if overlap(label.rect, other.rect):
-                defects.append(f"{label.name}: touches {other.name}")
+                defects.append((f"{label.name}: touches {other.name}", position))
         for frame in frames.values():
             if touches(label.rect, frame.lines):
-                defects.append(f"{label.name}: touches {frame.name}")
+                defects.append((f"{label.name}: touches {frame.name}", position))
 
-    crossed = []
+    crossed: list[Finding] = []
     for a, b in itertools.combinations(edges, 2):
         ends = [end.point for edge in (a, b) for end in edge.ends.values()]
-        if any(
-            min(math.dist(point, end) for end in ends) > END_TOLERANCE
+        if points := [
+            point
             for point in crossings(a.lines, b.lines)
-        ):
-            crossed.append(f"{a.name} crosses {b.name}")
+            if min(math.dist(point, end) for end in ends) > END_TOLERANCE
+        ]:
+            crossed.append((f"{a.name} crosses {b.name}", points[0]))
 
-    left, bottom, right, top = map(float, graph["bb"].split(","))
-    return Report(defects, crossed, (right - left, top - bottom))
+    if not (match := SVG_SIZE.search(svg)):
+        raise ValueError("Graphviz's SVG output has no size")
+    width, height = map(float, match.groups())
+    return Report(in_svg(defects, svg), in_svg(crossed, svg), (width, height))
 
 
 def main() -> None:
@@ -518,19 +615,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("file", type=Path, help="Graphviz .dot file")
     args = parser.parse_args()
-    report = check(render(args.file))
-    defects = font_defects(args.file) + report.defects
-    for defect in defects:
+    if not has_neato():
+        print(
+            "Warning: the neato layout is missing, Debian and Ubuntu ship it in the libgvplugin-neato-layout8 package"
+        )
+    report = check(*render(args.file))
+    fonts = font_defects(graphviz_log(args.file))
+    for defect in fonts:
         print(f"Defect: {defect}")
-    for crossing in report.crossings:
-        print(f"Crossing: {crossing}")
-    defect_count, crossing_count = len(defects), len(report.crossings)
+    for defect, (x, y) in report.defects:
+        print(f"Defect at ({x:.0f}, {y:.0f}): {defect}")
+    for crossing, (x, y) in report.crossings:
+        print(f"Crossing at ({x:.0f}, {y:.0f}): {crossing}")
+    defect_count = len(fonts) + len(report.defects)
+    crossing_count = len(report.crossings)
     print(
         f"Size: {report.size[0]:g} × {report.size[1]:g}pt, "
         f"{defect_count} defect{'s' * (defect_count != 1)}, "
         f"{crossing_count} crossing{'s' * (crossing_count != 1)}"
     )
-    if defects:
+    if defect_count:
         sys.exit(1)
 
 
