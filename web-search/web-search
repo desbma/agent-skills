@@ -31,8 +31,8 @@ from openai.types.responses import (
     ResponseTextDeltaEvent,
 )
 
-MODEL = "gpt-6-luna"
-REASONING_EFFORT = "medium"
+MODEL = "gpt-6.1-terra"
+REASONING_EFFORT = "low"
 SCHEMA: dict[str, object] = {
     "type": "object",
     "additionalProperties": False,
