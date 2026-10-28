@@ -37,8 +37,8 @@ Describe the change from the diff. The revision description says what its author
 
 - Describe, never interpret: say what the code now does, not why it was written, what it enables, or what it improves
 - Stay high level: no code, no pseudo code, no file by file walkthrough, no line references
-- Give each unrelated change a paragraph of its own, ordered by decreasing weight in the diff
-- When a feature or a bug fix comes with its tests or its documentation, they earn at most a trailing clause; when the change is itself test or documentation work, describe it as the subject it is
+- Give each unrelated change exactly one paragraph, ordered by decreasing weight in the diff
+- When a feature or a bug fix comes with its tests or its documentation, they earn at most a trailing clause; test or documentation work beyond them, like rewriting existing sections, is a change of its own, described as the subject it is
 
 ## Output
 
