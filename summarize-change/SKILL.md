@@ -27,6 +27,8 @@ Run:
 jj show <JJ_REVISION>
 ```
 
+Never work from a partial diff: read all of it first, fetching whatever a truncated or elided output left out.
+
 Read the surrounding code wherever the diff alone does not say what the changed code does.
 
 ## Main goals

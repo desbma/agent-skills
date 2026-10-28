@@ -20,6 +20,8 @@ Run:
 jj show <JJ_REVISION>
 ```
 
+Never work from a partial diff: read all of it first, fetching whatever a truncated or elided output left out.
+
 Derive the label used to find previous review files:
 
 ```bash
