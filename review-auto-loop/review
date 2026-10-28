@@ -112,14 +112,11 @@ PROPOSAL_RE = re.compile(
 )
 DECISION_RE = re.compile(r"\*\*Decision\*\*: (applied with changes|applied|declined)")
 
-NOT_JUDGED = "not judged"
-VOIDED_JUDGMENT = f"{NOT_JUDGED} — the assessment changed after judging"
 JUDGE_VERDICT = r"agree|disagree, (?:apply-with-changes|apply|decline)|option [a-z]"
 JUDGE_CAPTURE_RE = re.compile(rf"\*\*([CRTD]\d+)\*\*: ({JUDGE_VERDICT})\s*$")
-JUDGE_RE = re.compile(rf"\*\*Judge\*\*: ({JUDGE_VERDICT}|{NOT_JUDGED})(?: —.*)?\s*$")
+JUDGE_RE = re.compile(rf"\*\*Judge\*\*: ({JUDGE_VERDICT})\s*$")
 JUDGE_CLASSES = {"agree": "note", "option": "tip", "disagree": "warning"}
 JUDGE_BUCKETS = {"agree": "agreed", "disagree": "disagreed", "option": "picked"}
-VOIDED_CLASS = "important"
 OPTION_RE = re.compile(r"- \(([a-z])\) ")
 REPORT_LABEL_RES = (CLAIM_RE, PROPOSAL_RE, DECISION_RE, JUDGE_RE)
 
@@ -1553,6 +1550,9 @@ def cmd_item_assess(args: argparse.Namespace) -> None:
     start, end = item_span(lines, args.id)
     if decision_index(lines[start:end]) is not None:
         raise SystemExit(f"Item {args.id} is already decided")
+    judged = any(JUDGE_RE.match(line) for _, line in structural_lines(lines[start:end]))
+    if judged or report_is_formatted(lines):
+        raise SystemExit(f"Item {args.id} is already judged or formatted")
     quote_start = next(
         (index for index in range(start, end) if lines[index].startswith(">")), None
     )
@@ -1562,7 +1562,6 @@ def cmd_item_assess(args: argparse.Namespace) -> None:
     while quote_end < end and lines[quote_end].startswith(">"):
         quote_end += 1
     severity = "" if args.severity is None else f", {args.severity}"
-    judged = any(JUDGE_RE.match(line) for _, line in structural_lines(lines[start:end]))
     block = [
         f"**Claim**: {args.claim}{severity}",
         "",
@@ -1571,7 +1570,6 @@ def cmd_item_assess(args: argparse.Namespace) -> None:
         *analysis.splitlines(),
         "",
         *proposal,
-        *(["", *judge_block(VOIDED_CLASS, VOIDED_JUDGMENT, [])] if judged else []),
     ]
     kept = lines[:quote_end]
     assessed = splice(kept, len(kept), render_prose(block, anchor_targets(metadata)))
@@ -1698,9 +1696,7 @@ def framed(label: str, lines: list[str]) -> list[str]:
 def wave_recap(body: list[str], judged: bool) -> list[str]:
     """Bucket the wave's items by proposal and by recommendation, a judged wave framing the one above the other."""
     proposals: dict[str, list[str]] = {proposal: [] for proposal in Proposal}
-    judgments: dict[str, list[str]] = {
-        name: [] for name in (*JUDGE_BUCKETS.values(), NOT_JUDGED)
-    }
+    judgments: dict[str, list[str]] = {name: [] for name in JUDGE_BUCKETS.values()}
     identifier = ""
     for _, line in structural_lines(body):
         if heading := ITEM_HEADING_RE.match(line):
@@ -1708,10 +1704,8 @@ def wave_recap(body: list[str], judged: bool) -> list[str]:
         elif proposal := PROPOSAL_RE.match(line):
             proposals[proposal.group(1)].append(identifier)
         elif recommendation := JUDGE_RE.match(line):
-            verdict = recommendation.group(1)
-            kind, tail = judge_verdict(verdict)
-            bucket = NOT_JUDGED if verdict == NOT_JUDGED else JUDGE_BUCKETS[kind]
-            judgments[bucket].append(
+            kind, tail = judge_verdict(recommendation.group(1))
+            judgments[JUDGE_BUCKETS[kind]].append(
                 f"{identifier} ({tail})" if kind == "option" else identifier
             )
     assessed = bucket_lines(proposals)

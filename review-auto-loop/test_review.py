@@ -601,7 +601,6 @@ class IndexEntryStyleTest(unittest.TestCase):
             (
                 ("critical", "holds", "critical", "decline", "", ""),
                 ("critical", "holds", "critical", "decline", "agree", ""),
-                ("major", "holds", "major", "decline", "not judged", ""),
                 ("major", "holds", "major", "decline", "disagree, apply", "major"),
                 (
                     "critical",
@@ -624,7 +623,6 @@ class IndexEntryStyleTest(unittest.TestCase):
                 ("critical", "does not hold", "", "decline", "", ""),
                 ("major", "does not hold", "", "apply with changes", "", ""),
                 ("critical", "does not hold", "", "decline", "agree", ""),
-                ("critical", "does not hold", "", "decline", "not judged", ""),
                 (
                     "critical",
                     "does not hold",
@@ -898,6 +896,13 @@ class WaveFixture(CliFixture):
             *tail,
             stdin=stdin,
         )
+
+    def assert_reassessment_refused(self, identifier: str, error: str) -> None:
+        """Check a new assessment of an item fails with the error, leaving the report as it stands."""
+        before = self.report.read_text()
+        with self.assertRaisesRegex(SystemExit, error):
+            self.assess(identifier, stdin="Worth another look.")
+        self.assertEqual(self.report.read_text(), before)
 
     def decide(
         self,
@@ -1248,10 +1253,13 @@ class WaveTest(WaveFixture):
         self.capture("correctness", 1)
         identifier = self.imported_assessed("correctness")[0]
         self.decide(identifier)
-        decided = self.report.read_text()
-        with self.assertRaises(SystemExit):
-            self.assess(identifier, stdin="Worth another look.")
-        self.assertEqual(self.report.read_text(), decided)
+        self.assert_reassessment_refused(identifier, "already decided")
+
+    def test_a_formatted_item_is_not_reassessed(self) -> None:
+        """Refuse a new assessment on an item of a formatted report, leaving the report as it stands."""
+        identifier = self.ready()[0]
+        self.run_cli("report", "format", self.report)
+        self.assert_reassessment_refused(identifier, "already judged or formatted")
 
     def test_an_assessment_may_hold_a_hash_line(self) -> None:
         """Keep a `#` line inside an analysis from ending the item."""
@@ -1321,6 +1329,14 @@ class WaveTest(WaveFixture):
             "as proposed",
             self.report.read_text(),
         )
+
+    def test_a_fenced_judge_line_leaves_the_item_assessable(self) -> None:
+        """Keep an item assessable under an analysis quoting a judge recommendation."""
+        self.capture("correctness", 1)
+        identifier = self.imported("correctness")[0]
+        analysis = "Like:\n\n```markdown\n**Judge**: agree\n```"
+        self.assess(identifier, stdin=analysis)
+        self.assess(identifier, stdin=analysis)
 
     def test_an_analysis_reading_as_a_decision_leaves_the_item_open(self) -> None:
         """Keep an item assessable under an analysis stating a decision in its own prose, and keep its text."""
@@ -1691,18 +1707,21 @@ class WaveTest(WaveFixture):
         )
 
     def test_format_runs_again_over_its_own_output(self) -> None:
-        """Formatting a formatted report replaces its top part and index."""
+        """Formatting a formatted report replaces its top part, index and footer."""
         self.complete_wave()
         first, second = self.imported("correctness")
         self.assess(first)
         self.assess(second, stdin="# Review wave 2 — example\n")
         self.run_cli("report", "format", self.report)
-        self.assess(first, "not worth it", proposal="decline")
+        self.write_summary(text="The change reworks the walk.\n")
         self.run_cli("report", "format", self.report)
         lines = self.report.read_text().splitlines()
         self.assertEqual(lines.count("# Review wave 1"), 1)
         self.assertEqual(lines.count("## Items"), 1)
-        self.assertIn("  - [C1 / major / holds, decline](#c1-run-1-item-1)", lines)
+        self.assertIn("  - [**C1 / major / holds, apply**](#c1-run-1-item-1)", lines)
+        self.assertIn("The change reworks the walk.", lines)
+        self.assertNotIn(SUMMARY.strip(), lines)
+        self.assertEqual([line for line in lines if line.startswith("<p ")], lines[-1:])
 
     def test_format_signs_the_report(self) -> None:
         """Close the report with a footer naming the skill and the time of the format."""
@@ -1714,14 +1733,6 @@ class WaveTest(WaveFixture):
             r'agent-skills/tree/master/review-auto-loop">review-auto-loop</a> on '
             r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}</p>$",
         )
-
-    def test_format_replaces_its_own_footer(self) -> None:
-        """Formatting a formatted report leaves one footer, still closing it."""
-        self.ready()
-        self.run_cli("report", "format", self.report)
-        self.run_cli("report", "format", self.report)
-        lines = self.report.read_text().splitlines()
-        self.assertEqual([line for line in lines if line.startswith("<p ")], lines[-1:])
 
     def test_report_format_without_items(self) -> None:
         """Give a wave that yielded nothing its top part, no index and no recap."""
@@ -2403,28 +2414,10 @@ class JudgeReportTest(JudgedFixture):
         ):
             self.run_cli("report", "format", self.report)
 
-    def test_reassessing_voids_the_judgment_in_place(self) -> None:
-        """Replace the recommendation of a re-assessed item with a note saying it no longer stands."""
+    def test_a_judged_item_is_not_reassessed(self) -> None:
+        """Refuse a new assessment on a judged item, leaving its recommendation as it stands."""
         self.judge("C1", "C2")
-        self.assess("C1", "not worth it", proposal="decline", stdin="A second look.")
-        text = self.report.read_text()
-        self.assertIn(
-            f"::: important\n**Judge**: {review.VOIDED_JUDGMENT}\n:::\n", text
-        )
-        self.assertEqual(text.count("**Judge**"), 2)
-        recap = self.run_cli("report", "format", self.report)
-        self.assertIn("│  - not judged: C1\n", recap)
-        self.assertIn(
-            "  - [C1 / major / holds, decline / not judged](#c1-run-1-item-1)",
-            self.report.read_text().splitlines(),
-        )
-
-    def test_voiding_a_judgment_twice_leaves_one_note(self) -> None:
-        """Keep one void note on an item re-assessed again after its judgment was voided."""
-        self.judge("C1", "C2")
-        self.assess("C1", "not worth it", proposal="decline", stdin="A second look.")
-        self.assess("C1", stdin="A third look.")
-        self.assertEqual(self.report.read_text().count(review.VOIDED_JUDGMENT), 1)
+        self.assert_reassessment_refused("C1", "already judged or formatted")
 
 
 class JudgeGridTest(JudgedFixture):

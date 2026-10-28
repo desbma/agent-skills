@@ -47,7 +47,7 @@ If wave reports for the change already exist, the loop resumes from them: the wa
 
 Items are numbered with the domain prefix and a counter continuous across the whole loop: `C7` is the seventh correctness item the loop ever produced, whatever its wave.
 
-The claim judges the item as the reviewer wrote it — whether its diagnosis survives reading the code, and how severe what survives is — and nothing else. It never carries a course of action. Assessing an item again replaces its assessment, until the item is decided.
+The claim judges the item as the reviewer wrote it — whether its diagnosis survives reading the code, and how severe what survives is — and nothing else. It never carries a course of action. Assessing an item again replaces its assessment, until the item is judged or the report formatted.
 
 The severity follows the claim: the reviewer's own, kept when it stands, replaced when it does not, the analysis then saying what moved it. Rate it against the `## Severity` sections of `<SKILL_DIR>/../review-common.md` and of the item's domain skill, `<SKILL_DIR>/../review-<domain>/SKILL.md`, reading only those sections. State it on every item rather than let silence stand for agreement. A `partly-holds` item is rated on what survives, not on what the reviewer claimed. `does-not-hold` is the one exception: no defect survives, so there is nothing to rate.
 
@@ -132,7 +132,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    <SKILL_DIR>/review report format <WAVE_REPORT>
    ```
 
-   It refuses a wave whose chains are unfinished, whose change summary is missing, or whose items are not all in the report and assessed — and, on a judged wave, not all ruled on. Run it again after any later change to an assessment: it replaces the top part and the index it generated. The command prints the wave's recap — the item total, the count per proposal verdict, and the items carrying each — to the user's terminal, a judged wave adding the same counts by judge recommendation. Then, unless the wave produced no item, open the wave report for them with `xdg-open <WAVE_REPORT>`. The report is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Nothing follows the recap but the turn's closing sentence.
+   It refuses a wave whose chains are unfinished, whose change summary is missing, or whose items are not all in the report and assessed — and, on a judged wave, not all ruled on. The command prints the wave's recap — the item total, the count per proposal verdict, and the items carrying each — to the user's terminal, a judged wave adding the same counts by judge recommendation. Then, unless the wave produced no item, open the wave report for them with `xdg-open <WAVE_REPORT>`. The report is the wave's user-facing artifact: never reproduce or summarize its contents in the conversation. Nothing follows the recap but the turn's closing sentence.
 
 5. Let the user pick, item by item. A bare `apply` resolves against that item's proposal, never against the reviewer's text:
 
@@ -140,7 +140,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    - proposed `decline` — the user is overriding the decline; carry out the item as the reviewer wrote it, and say so before acting
    - proposed `your-call` — a bare `apply` is not an answer; ask which option
 
-   On a judged wave every item whose recommendation stands carries a default instead: the judge's recommendation, or the item's own proposal where the judge agreed with it. A reply naming no item — "go", "ok" — settles those items at their default, and the user overrides by naming items: "go, but decline C1". A bare `apply` on a named item then resolves against the recommendation rather than against the proposal, and a `your call` item is settled by the judge's lettered pick. An item whose recommendation a later re-assessment voided has none to resolve against, so it takes the rules above as an unjudged item would.
+   On a judged wave every item carries a default instead: the judge's recommendation, or the item's own proposal where the judge agreed with it. A reply naming no item — "go", "ok" — settles those items at their default, and the user overrides by naming items: "go, but decline C1". A bare `apply` on a named item then resolves against the recommendation rather than against the proposal, and a `your call` item is settled by the judge's lettered pick.
 
    A pick may also override the proposal with an instruction of its own, which then replaces it. If their reply asks anything, answer it and change nothing, then wait again: the next message carries the picks, or more questions. Move to step 6 only on a reply that asks nothing.
 
@@ -154,7 +154,7 @@ The decision is added once the user has picked, exactly one per item, its reason
    EOF
    ```
 
-   Run it again for an item whose decision changes later: it replaces the decision. Never open or show the annotated report.
+   The reasoning records any change of course agreed in the conversation after the assessment. Run it again for an item whose decision changes later: it replaces the decision. Never open or show the annotated report.
 
 8. Summarize the wave — what the user decided, and what the applied changes touched — then ask once which move comes next: repeat the domains this wave ran, or move to the ones it left out, named as phases when the wave ran a phase. A wave that ran every domain leaves only the repeat to offer. Ending the loop is not offered as a third: it is what happens when no wave is asked for.
 
