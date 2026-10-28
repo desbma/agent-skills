@@ -452,6 +452,68 @@ class CheckTest(unittest.TestCase):
             messages(report.defects), ["p -> m: head touches frame cluster_x"]
         )
 
+    def test_end_on_frame(self) -> None:
+        """Measure the ends of arrows on invisible points against the frame line under them."""
+        report = self.check("""
+            subgraph cluster_x {
+                m [pos="0,0!"];
+                j [shape=point, style=invis, width=0, pos="-60,-40!"];
+                k [shape=point, style=invis, width=0, pos="60,40!"];
+            }
+            e [shape=point, style=invis, width=0, pos="-60.5,20!"];
+            f [shape=point, style=invis, width=0, pos="-62.5,-20!"];
+            g [shape=point, style=invis, width=0, pos="60.5,0!"];
+            p [pos="-200,20!"]; q [pos="-200,-20!"]; r [pos="200,0!"];
+            p -> e; q -> f [dir=none]; g -> r [dir=back];
+        """)
+        self.assertEqual(
+            without_numbers(messages(report.defects)),
+            ["q -> f: head Npt off the outline of frame cluster_x"],
+        )
+
+    def test_through_frame_to_its_line(self) -> None:
+        """Report an arrow crossing a frame to end on its far line."""
+        report = self.check("""
+            subgraph cluster_x {
+                j [shape=point, style=invis, width=0, pos="-60,-60!"];
+                k [shape=point, style=invis, width=0, pos="60,60!"];
+            }
+            a [shape=point, style=invis, width=0, pos="-60,-30!"];
+            p [pos="200,-30!"];
+            p -> a;
+        """)
+        self.assertEqual(
+            messages(report.defects), ["p -> a: passes through frame cluster_x"]
+        )
+
+    def test_text_by_frame(self) -> None:
+        """Leave the end of an arrow on bare text near a frame line unattached."""
+        self.assert_no_defects("""
+            subgraph cluster_x {
+                j [shape=point, style=invis, width=0, pos="-100,-50!"];
+                k [shape=point, style=invis, width=0, pos="100,50!"];
+                t [shape=plain, label="foo", pos="-86,0!"];
+            }
+            b [pos="-250,0!"];
+            t -> b;
+        """)
+
+    def test_end_between_frames(self) -> None:
+        """Attach an arrow end to the nearest of two frame lines, not the first declared."""
+        self.assert_no_defects("""
+            subgraph cluster_a {
+                j [shape=point, style=invis, width=0, pos="-100,-50!"];
+                k [shape=point, style=invis, width=0, pos="0,50!"];
+            }
+            subgraph cluster_b {
+                l [shape=point, style=invis, width=0, pos="4,-50!"];
+                m [shape=point, style=invis, width=0, pos="104,50!"];
+            }
+            g [shape=point, style=invis, width=0, pos="4,-50.5!"];
+            r [pos="4,-150!"];
+            g -> r;
+        """)
+
     def test_gradient(self) -> None:
         """Report an arrow passing through boxes filled with gradients."""
         report = self.check("""

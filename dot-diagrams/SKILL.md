@@ -53,7 +53,8 @@ Show the user a diagram once `dot-check` reports no defects, or say which remain
 - `dot` chooses the order within each row itself: `rank=same` fixes a row, but `group`, `weight` and invisible edges only nudge the order. When the drawing needs the order within rows set too, pin positions by hand with `neato`: `layout=neato`, `inputscale=72` for positions in points, `pos="x,y!"` on every node, `splines=line`, not `splines=true`, whose arrows detour around boxes and out of frames. Then:
   - A frame hugs its nodes, ignores `margin`, and its title lands on them: pad it with two invisible corner nodes, `[shape=point, style=invis, width=0, pos="x,y!"]`, the same distance beyond its outer boxes on every side: 8pt, or 16pt when an arrow crosses the frame. Add 20pt more at the top when the frame has a title. `width=0` keeps them from taking the size set by the frame's `node [width=...]`.
   - Nested frames are not drawn: declare the inner frame on its own, and place its nodes inside the outer one.
-  - A `label` or `xlabel` on a sloped arrow may be drawn across it: place it with `taillabel`, `labelangle` and `labeldistance` instead.
+  - `lhead` and `ltail` are ignored: end an arrow on a frame's line by aiming it at a node with `[shape=point, style=invis, width=0]` placed on that line.
+  - A `label` or `xlabel` is drawn against its arrow, and across it when the arrow slopes: place it with `taillabel`, `labelangle` and `labeldistance` instead.
 - Place boxes yourself: try a change and read what `dot-check` reports, rather than working out its effects in advance or running a scripted search over positions.
 
 ## Source

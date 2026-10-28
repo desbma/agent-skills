@@ -20,7 +20,7 @@ type Rect = tuple[float, float, float, float]
 # Layout problem, and where it is drawn
 type Finding = tuple[str, Point]
 
-# Largest gap between an arrow end and the line of its node's outline still drawn as touching, in points
+# Largest gap between an arrow end and its attached outline still drawn as touching, in points
 ATTACH_TOLERANCE = 1.0
 # Distance from an arrow end within which another arrow meets it rather than crosses it, in points
 END_TOLERANCE = 2.0
@@ -85,7 +85,7 @@ class Shape:
 class End:
     """Tail or head of a drawn arrow."""
 
-    # Shape the end attaches to, the node or the frame given by ltail or lhead
+    # Shape the end attaches to, its node or the frame it ends on
     outline: Shape | None
     # Point that must touch the outline: the arrowhead tip, or the line end
     point: Point
@@ -261,6 +261,21 @@ def point_distance(point: Point, segment: Segment) -> float:
     return math.dist(point, (ax + t * dx, ay + t * dy))
 
 
+def outline_gap(point: Point, shape: Shape) -> float:
+    """Return the distance from a point to the nearer edge of the nearest line of a shape."""
+    return min(
+        point_distance(point, side) - width / 2
+        for line, width in zip(shape.lines, shape.line_widths, strict=True)
+        for side in itertools.pairwise(line)
+    )
+
+
+def frame_under(point: Point, frames: dict[str, Shape]) -> Shape | None:
+    """Return the frame whose line lies nearest a point, within the frame gap, None if none does."""
+    nearest = min(frames.values(), key=lambda f: outline_gap(point, f), default=None)
+    return nearest if nearest and outline_gap(point, nearest) <= FRAME_GAP else None
+
+
 def near(a: list[Polyline], b: list[Polyline], limit: float) -> Point | None:
     """Return a point of one of two sets of polylines where they come closer than a limit, None if they do not."""
     if points := crossings(a, b):
@@ -422,6 +437,8 @@ def check(graph: dict[str, Any], svg: str) -> Report:
     centers = {}
     nodes = {}
     frames = {}
+    # Nodes drawing nothing at all, whose arrow ends attach to the frame line under them
+    anchors = set()
     labels = []
     for i, o in enumerate(objects):
         if i >= graph["_subgraph_cnt"]:
@@ -436,6 +453,8 @@ def check(graph: dict[str, Any], svg: str) -> Report:
                 # Each xdot attribute starts drawing at the default width
                 widths = line_widths(draw) + line_widths(ldraw)
                 nodes[i] = Shape(o["name"], lines, widths, rounded_box)
+            if not draw and not ldraw:
+                anchors.add(i)
             # Text within its node's outline is checked with the outline
             labels.extend(
                 Label(f'label "{text}" of {o["name"]}', rect, None if lines else i)
@@ -474,6 +493,20 @@ def check(graph: dict[str, Any], svg: str) -> Report:
         paths = [
             [(float(t[0]), float(t[1])) for t in s if len(t) == 2] for s in splines
         ]
+        ends = {
+            kind: End(
+                frames.get(e.get(f"l{kind}"))
+                or nodes.get(e[kind])
+                or (frame_under(point, frames) if e[kind] in anchors else None),
+                point,
+                base,
+                trace(visible(e.get(draw_key, []))),
+            )
+            for kind, point, base, draw_key in (
+                ("tail", tips.get("s", paths[0][0]), paths[0][0], "_tdraw_"),
+                ("head", tips.get("e", paths[-1][-1]), paths[-1][-1], "_hdraw_"),
+            )
+        }
         edges.append(
             Edge(
                 name=name,
@@ -481,20 +514,7 @@ def check(graph: dict[str, Any], svg: str) -> Report:
                 head=e["head"],
                 lines=lines,
                 centerline=[bezier(path) for path in paths],
-                ends={
-                    "tail": End(
-                        frames.get(e.get("ltail")) or nodes.get(e["tail"]),
-                        tips.get("s", paths[0][0]),
-                        paths[0][0],
-                        trace(visible(e.get("_tdraw_", []))),
-                    ),
-                    "head": End(
-                        frames.get(e.get("lhead")) or nodes.get(e["head"]),
-                        tips.get("e", paths[-1][-1]),
-                        paths[-1][-1],
-                        trace(visible(e.get("_hdraw_", []))),
-                    ),
-                },
+                ends=ends,
             )
         )
 
@@ -504,13 +524,7 @@ def check(graph: dict[str, Any], svg: str) -> Report:
             if not (outline := end.outline):
                 continue
             sides = segments(outline.lines)
-            # Distance to the nearer edge of the nearest line of the outline
-            off = min(
-                point_distance(end.point, side) - width / 2
-                for line, width in zip(outline.lines, outline.line_widths, strict=True)
-                for side in itertools.pairwise(line)
-            )
-            if off > ATTACH_TOLERANCE:
+            if (off := outline_gap(end.point, outline)) > ATTACH_TOLERANCE:
                 corner = outline.rounded_box and at_rounded_corner(end.point, outline)
                 defects.append(
                     (
@@ -547,11 +561,14 @@ def check(graph: dict[str, Any], svg: str) -> Report:
             for point in crossings(edge.centerline, frame.lines):
                 if min(math.dist(point, p) for p in ends + points) > END_TOLERANCE:
                     points.append(point)
+            on_line = [end.outline is frame for end in edge.ends.values()]
             inside_ends = sum(
-                inside(centers[i], frame.lines) for i in (edge.tail, edge.head)
+                inside(centers[i], frame.lines)
+                for i, on in zip((edge.tail, edge.head), on_line, strict=True)
+                if not on
             )
-            # An arrow with one end inside crosses the outline once, others never
-            if len(points) > int(inside_ends == 1):
+            # An arrow with one end inside and none on the outline crosses it once, others never
+            if len(points) > int(inside_ends == 1 and not any(on_line)):
                 way = "leaves and re-enters" if inside_ends else "passes through"
                 defects.append((f"{edge.name}: {way} {frame.name}", points[0]))
     for node in nodes.values():
@@ -566,7 +583,7 @@ def check(graph: dict[str, Any], svg: str) -> Report:
     ]
     for edge, kind, end in ends_with_arrowheads:
         for frame in frames.values():
-            # An arrow clipped to a frame by ltail or lhead ends on its line
+            # An arrow attached to a frame ends on its line
             if frame is end.outline:
                 continue
             if (point := near(end.arrowhead, frame.lines, FRAME_GAP)) is not None:
