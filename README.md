@@ -44,7 +44,7 @@ Once the main agent has assessed every item of a wave, `review-judge`, unless di
 
 The user keeps the final say: the recommendation is only each item's default, and they pick item by item. The main agent applies the picks, the user squashes them, then chooses to repeat the wave's domains or move to the other phase. Every default can be overridden along the way: the domains a wave runs, the cap of each chain, and whether a wave is judged at all.
 
-![Review workflow](docs/review-auto-loop.svg)
+[![Review workflow](docs/review-auto-loop.svg)](docs/review-auto-loop.svg)
 
 ### Review agents
 
