@@ -2864,8 +2864,9 @@ class SummaryRunTest(WaveFixture):
             "jj": f'echo "{bin_dir}"',
             "hax": f"""trap 'kill $!; echo Stopped >&2; touch "{terminated}"; exit 143' TERM
 echo Started >&2
+sleep 10 &
 echo $$ > "{agent_pid}.tmp" && mv "{agent_pid}.tmp" "{agent_pid}"
-sleep 10 & wait""",
+wait""",
         }.items():
             stub = bin_dir / name
             stub.write_text(f"#!/bin/sh\n{body}\n")
