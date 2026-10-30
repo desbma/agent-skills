@@ -6,9 +6,7 @@ Personal [coding agent skills](https://agentskills.io/).
 
 ---
 
-**This repository contains personal tools that I publish for sharing, documentation and convenience.**
-
-**They may or may not work for your use case, and little effort has been made to support systems and workflows other than the ones I use.**
+**This repository contains personal tools that I publish for sharing, documentation and convenience. They may or may not work for your use case, and little effort has been made to support systems and workflows other than the ones I use.**
 
 ---
 
@@ -24,7 +22,7 @@ Personal [coding agent skills](https://agentskills.io/).
 - [`handoff`](handoff/SKILL.md): Summarize the conversation into one self-contained document per divergent path.
 - [`implem-brake`](implem-brake/SKILL.md): Forbid the agent from touching project files until explicitly allowed again, to discuss a change without it jumping to implementation. Invoked manually with `on`/`off`.
 - [`resume-handoff`](resume-handoff/SKILL.md): Import a handoff file.
-- [`review-auto-loop`](review-auto-loop/SKILL.md): Run waves of parallel chains of reviews with external reviewer agents, to balance thoroughness and speed. The user gets presented a report of all findings after each wave, opening on a summary of the reviewed change, each finding assessed by the main agent, and can choose which to apply. It runs the following child skills as agent subprocesses:
+- [`review-auto-loop`](review-auto-loop/SKILL.md): Run waves of parallel chains of reviews with external reviewer agents, to balance thoroughness and speed. The user gets presented a report of all findings after each wave, opening on a summary of the reviewed change, each finding assessed by the main agent, and can choose which to apply (see [Review workflow](#review-workflow)). It runs the following child skills as agent subprocesses:
   - Per-domain review skills:
     - [`review-correctness`](review-correctness/SKILL.md): Look for bugs, logic holes, incomplete changes, hidden quadratic complexity, etc.
     - [`review-readability`](review-readability/SKILL.md): Simplify code, use idiomatic patterns, counter model tendency to write overly verbose code.
