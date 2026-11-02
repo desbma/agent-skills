@@ -11,10 +11,8 @@ import collections.abc
 import dataclasses
 import enum
 import functools
-import os
 import re
 import shlex
-import shutil
 import signal
 import string
 import subprocess
@@ -65,7 +63,6 @@ CAP_SCALES = collections.defaultdict(
     tuple, dict.fromkeys(PHASE_DOMAINS["A"], ((100, 2), (1000, 3), (5000, 4)))
 )
 
-SKILLS_DIR = Path(__file__).resolve().parent.parent
 REVIEWERS = {
     Domain.CORRECTNESS: Reviewer("gpt-6-astra", "xhigh", "GPT 6 Astra"),
     Domain.READABILITY: Reviewer("gpt-5.6-sol", "xhigh", "GPT 5.6 Sol"),
@@ -1073,29 +1070,18 @@ def read_summary(metadata: ReportMetadata) -> str:
     return summary.read_text().strip()
 
 
-def agent_argv(model: str, effort: str, skill: str, arguments: str) -> list[str]:
-    """Build the command line of a Codex agent run under a single skill, its prompt last."""
-    if shutil.which("hax"):
-        return [
-            "hax",
-            "--provider=codex",
-            f"--model={model}",
-            f"--effort={effort}",
-            "-p",
-            (
-                f"Read {SKILLS_DIR / skill / 'SKILL.md'} and follow its instructions. "
-                f"Arguments: {arguments}"
-            ),
-        ]
+def agent_argv(
+    model: str, effort: str, preset: str, skill: str, arguments: str
+) -> list[str]:
+    """Build the command line of an agent run under a single skill and the instruction files alone, its arguments last."""
     return [
-        "pi",
-        "--model",
-        f"openai-codex/{model}:{effort}",
-        "--no-skills",
-        "--skill",
-        str(SKILLS_DIR / skill),
-        "-p",
-        f"/skill:{skill} {arguments}",
+        "agent-worker",
+        f"--model={model}",
+        f"--effort={effort}",
+        f"--preset={preset}",
+        "--no-system-prompt",
+        f"--invoke-skill={skill}",
+        arguments,
     ]
 
 
@@ -1121,11 +1107,6 @@ def run_agent(
                     stdout=stdout,
                     stderr=diagnostics,
                     cwd=jj_output(["root"]).strip(),
-                    # hide from a hax agent the prompt sections a review does not use
-                    env=os.environ
-                    | dict.fromkeys(
-                        ("HAX_NO_SKILLS", "HAX_NO_SUBAGENTS", "HAX_NO_TASKS"), "1"
-                    ),
                 ) as agent,
             ):
                 try:
@@ -1185,6 +1166,7 @@ def cmd_chain_run(args: argparse.Namespace) -> None:
         agent_argv(
             reviewer.model,
             reviewer.effort,
+            "standard",
             f"review-{args.domain}",
             reviewer_arguments(metadata.change_id, chain),
         ),
@@ -1208,6 +1190,7 @@ def cmd_summary_run(args: argparse.Namespace) -> None:
             agent_argv(
                 SUMMARY_MODEL,
                 SUMMARY_EFFORT,
+                "standard",
                 "summarize-change",
                 f"{metadata.change_id}. Summarize that exact revision.",
             ),
@@ -1222,28 +1205,6 @@ def judge_path(metadata: ReportMetadata) -> Path:
     return (
         metadata.review_dir / f"{metadata.short_change_id}-judge-wave{metadata.wave}.md"
     )
-
-
-def judge_argv(prompt: str) -> list[str]:
-    """Build the command line of the judge, reading and searching only."""
-    return [
-        "claude",
-        "--model",
-        "claude-fable-5-1",
-        "--effort",
-        "xhigh",
-        "--tools",
-        "Read,Grep,Glob",
-        # MCP servers reach the judge as deferred tools, past --tools
-        "--strict-mcp-config",
-        # leave the skill and the instruction files as the judge's only instructions
-        "--system-prompt",
-        "",
-        "--settings",
-        '{"autoMemoryEnabled": false}',
-        "-p",
-        f"/review-judge {prompt}",
-    ]
 
 
 def judge_prompt(metadata: ReportMetadata, diff: Path, earlier: list[Path]) -> str:
@@ -1391,7 +1352,13 @@ def cmd_judge_run(args: argparse.Namespace) -> None:
         diff = Path(workspace, f"{metadata.short_change_id}.diff")
         diff.write_text(jj_output(["show", metadata.change_id]))
         run_agent(
-            judge_argv(judge_prompt(metadata, diff, earlier)),
+            agent_argv(
+                "claude-fable-5-1",
+                "xhigh",
+                "read-only",
+                "review-judge",
+                judge_prompt(metadata, diff, earlier),
+            ),
             capture,
             check,
         )

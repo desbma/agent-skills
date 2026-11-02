@@ -46,7 +46,7 @@ The user keeps the final say: the recommendation is only each item's default, an
 
 ### Review agents
 
-`review-auto-loop` runs these skills as agent subprocesses:
+`review-auto-loop` runs these skills as agent subprocesses through [`agent-worker`](https://github.com/desbma/agent-sandbox#agent-worker), which picks the first harness listed that can run them:
 
 | Skill | Model | Effort | Harness |
 | --- | --- | --- | --- |

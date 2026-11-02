@@ -706,9 +706,8 @@ class CliFixture(unittest.TestCase):
         output: str,
         diagnostics: str = "",
         status: int = 0,
-        hax: bool = True,
     ) -> str:
-        """Run a subcommand with the agent replaced by one writing the given output and diagnostics, with hax on PATH or not."""
+        """Run a subcommand with the agent replaced by one writing the given output and diagnostics."""
 
         def jj(args: list[str]) -> str:
             return "/repo\n" if args == ["root"] else DIFF
@@ -720,9 +719,6 @@ class CliFixture(unittest.TestCase):
 
         with (
             mock.patch.object(review, "jj_output", side_effect=jj),
-            mock.patch.object(
-                review.shutil, "which", return_value="/usr/bin/hax" if hax else None
-            ),
             patch_agent(agent) as spawn,
         ):
             self.spawn = spawn
@@ -1923,24 +1919,6 @@ class JudgeSettingTest(JudgedFixture):
         self.assertRaises(SystemExit, review.read_metadata, stray)
 
 
-class JudgeArgvTest(unittest.TestCase):
-    """The command line the judge runs under."""
-
-    def test_it_runs_under_claude(self) -> None:
-        """Run a claude agent resolving the judge skill by name, reading and searching only, on the skill and the instruction files alone."""
-        argv = review.judge_argv("judge it")
-        self.assertEqual(argv[0], "claude")
-        self.assertEqual(argv[argv.index("--model") + 1], "claude-fable-5-1")
-        self.assertEqual(argv[argv.index("--effort") + 1], "xhigh")
-        self.assertEqual(argv[argv.index("--tools") + 1], "Read,Grep,Glob")
-        self.assertIn("--strict-mcp-config", argv)
-        self.assertEqual(argv[-2:], ["-p", "/review-judge judge it"])
-        self.assertEqual(argv[argv.index("--system-prompt") + 1], "")
-        self.assertEqual(
-            argv[argv.index("--settings") + 1], '{"autoMemoryEnabled": false}'
-        )
-
-
 class JudgeCheckTest(unittest.TestCase):
     """The checks a judgment passes before it reaches the wave report."""
 
@@ -2087,10 +2065,22 @@ class JudgeRunTest(JudgedFixture):
         self.assertEqual(capture.read_text(), output)
 
     def test_it_runs_the_judge_from_the_repository_root(self) -> None:
-        """Run the judge from the root the reviewers run from."""
+        """Run the judge skill reading and searching only, on the skill and the instruction files alone, from the root the reviewers run from."""
         self.ready()
         self.judge("C1", "C2")
-        self.assertEqual(self.spawn.call_args.args[0][0], "claude")
+        argv = self.spawn.call_args.args[0]
+        self.assertEqual(
+            argv[:-1],
+            [
+                "agent-worker",
+                "--model=claude-fable-5-1",
+                "--effort=xhigh",
+                "--preset=read-only",
+                "--no-system-prompt",
+                "--invoke-skill=review-judge",
+            ],
+        )
+        self.assertIn(str(self.report.resolve()), argv[-1])
         self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
 
     def test_a_wave_opting_out_is_formatted_unjudged(self) -> None:
@@ -2562,66 +2552,40 @@ class ChainRunTest(WaveFixture):
         self.assertEqual(list(self.chain("correctness").iterdir()), [capture])
 
     def test_it_runs_the_reviewer_over_the_change(self) -> None:
-        """Run a hax reviewer from the repository root, with a trimmed prompt, on the change, over the chain dir."""
-        variables = ("HAX_NO_SKILLS", "HAX_NO_SUBAGENTS", "HAX_NO_TASKS")
-        with mock.patch.dict(os.environ, dict.fromkeys(variables, "0")):
-            self.run_chain("readability")
-            self.assertEqual(os.environ["HAX_NO_SKILLS"], "0")
+        """Run the domain's review skill from the repository root, on the skill and the instruction files alone, on the change, over the chain dir."""
+        self.run_chain("readability")
         argv = self.spawn.call_args.args[0]
         reviewer = review.REVIEWERS[review.Domain.READABILITY]
         self.assertEqual(
             argv[:-1],
             [
-                "hax",
-                "--provider=codex",
+                "agent-worker",
                 f"--model={reviewer.model}",
                 f"--effort={reviewer.effort}",
-                "-p",
+                "--preset=standard",
+                "--no-system-prompt",
+                "--invoke-skill=review-readability",
             ],
         )
-        self.assertIn(
-            str(review.SKILLS_DIR / "review-readability" / "SKILL.md"), argv[-1]
-        )
-        self.assertIn(CHANGE_ID, argv[-1])
+        self.assertTrue(argv[-1].startswith(CHANGE_ID))
         self.assertIn(str(self.chain("readability")), argv[-1])
-        for variable in variables:
-            with self.subTest(variable=variable):
-                self.assertEqual(self.spawn.call_args.kwargs["env"][variable], "1")
         self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
-
-    def test_without_hax_it_runs_a_pi_reviewer(self) -> None:
-        """Fall back on a pi reviewer under the skill only when hax is not on PATH."""
-        self.run_chain("readability", hax=False)
-        argv = self.spawn.call_args.args[0]
-        reviewer = review.REVIEWERS[review.Domain.READABILITY]
-        self.assertEqual(
-            argv[:-1],
-            [
-                "pi",
-                "--model",
-                f"openai-codex/{reviewer.model}:{reviewer.effort}",
-                "--no-skills",
-                "--skill",
-                str(review.SKILLS_DIR / "review-readability"),
-                "-p",
-            ],
-        )
-        self.assertTrue(argv[-1].startswith(f"/skill:review-readability {CHANGE_ID}"))
-        self.assertIn(str(self.chain("readability")), argv[-1])
 
     @mock.patch.dict(review.REVIEWERS, DISTINCT_REVIEWERS)
     def test_each_chain_runs_its_domain_reviewer(self) -> None:
-        """Run every chain under the model and effort level of its own domain's reviewer."""
+        """Run every chain under its own domain's skill, and the model and effort level of its reviewer."""
         for domain in (review.Domain.CORRECTNESS, review.Domain.READABILITY):
             with self.subTest(domain=domain):
                 self.run_chain(domain)
+                argv = self.spawn.call_args.args[0]
                 self.assertEqual(
-                    self.spawn.call_args.args[0][2:4],
+                    argv[1:3],
                     [
                         f"--model={review.REVIEWERS[domain].model}",
                         f"--effort={review.REVIEWERS[domain].effort}",
                     ],
                 )
+                self.assertIn(f"--invoke-skill=review-{domain}", argv)
 
     def test_the_prompt_names_the_chain_dir_absolutely(self) -> None:
         """Expand a relative report to an absolute chain dir, for the reviewer at the repository root."""
@@ -2715,7 +2679,7 @@ class ChainRunTest(WaveFixture):
         self.assertEqual(list(self.chain("correctness").iterdir()), [])
         self.assertEqual(
             self.stderr.getvalue(),
-            "Partial\nUsage limit reached\nAgent run failed: hax exited 3\n",
+            "Partial\nUsage limit reached\nAgent run failed: agent-worker exited 3\n",
         )
 
     def test_a_reviewer_that_never_starts_leaves_nothing_behind(self) -> None:
@@ -2829,15 +2793,13 @@ class SummaryRunTest(WaveFixture):
         self.assertEqual(
             argv,
             [
-                "hax",
-                "--provider=codex",
+                "agent-worker",
                 f"--model={review.SUMMARY_MODEL}",
                 f"--effort={review.SUMMARY_EFFORT}",
-                "-p",
-                (
-                    f"Read {review.SKILLS_DIR / 'summarize-change' / 'SKILL.md'} and follow "
-                    f"its instructions. Arguments: {CHANGE_ID}. Summarize that exact revision."
-                ),
+                "--preset=standard",
+                "--no-system-prompt",
+                "--invoke-skill=summarize-change",
+                f"{CHANGE_ID}. Summarize that exact revision.",
             ],
         )
         self.assertEqual(self.spawn.call_args.kwargs["cwd"], "/repo")
@@ -2862,7 +2824,7 @@ class SummaryRunTest(WaveFixture):
         terminated = bin_dir / "agent.terminated"
         for name, body in {
             "jj": f'echo "{bin_dir}"',
-            "hax": f"""trap 'kill $!; echo Stopped >&2; touch "{terminated}"; exit 143' TERM
+            "agent-worker": f"""trap 'kill $!; echo Stopped >&2; touch "{terminated}"; exit 143' TERM
 echo Started >&2
 sleep 10 &
 echo $$ > "{agent_pid}.tmp" && mv "{agent_pid}.tmp" "{agent_pid}"
@@ -2904,10 +2866,9 @@ class WorkflowTest(CliFixture):
         self.review_dir.mkdir()
         self.bin.mkdir()
         self.output = self.bin / "output"
-        for agent in ("hax", "claude"):
-            stub = self.bin / agent
-            stub.write_text(f'#!/bin/sh\ncat "{self.output}"\n')
-            stub.chmod(0o755)
+        stub = self.bin / "agent-worker"
+        stub.write_text(f'#!/bin/sh\ncat "{self.output}"\n')
+        stub.chmod(0o755)
         self.enterContext(
             mock.patch.dict(os.environ, {"PATH": f"{self.bin}:{os.environ['PATH']}"})
         )
