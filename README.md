@@ -51,7 +51,7 @@ The user keeps the final say: the recommendation is only each item's default, an
 | Skill | Model | Effort | Harness |
 | --- | --- | --- | --- |
 | `review-correctness` | GPT 6 Astra | xhigh | `hax` / `pi` |
-| `review-readability` | GPT 5.6 Sol | xhigh | `hax` / `pi` |
+| `review-readability` | GPT 6.1 Sol | xhigh | `hax` / `pi` |
 | `review-tests` | GPT 6 Astra | xhigh | `hax` / `pi` |
 | `review-docs` | GPT 6.1 Sol | high | `hax` / `pi` |
 | `summarize-change` | GPT 6.1 Sol | low | `hax` / `pi` |

@@ -65,7 +65,7 @@ CAP_SCALES = collections.defaultdict(
 
 REVIEWERS = {
     Domain.CORRECTNESS: Reviewer("gpt-6-astra", "xhigh", "GPT 6 Astra"),
-    Domain.READABILITY: Reviewer("gpt-5.6-sol", "xhigh", "GPT 5.6 Sol"),
+    Domain.READABILITY: Reviewer("gpt-6.1-sol", "xhigh", "GPT 6.1 Sol"),
     Domain.TESTS: Reviewer("gpt-6-astra", "xhigh", "GPT 6 Astra"),
     Domain.DOCS: Reviewer("gpt-6.1-sol", "high", "GPT 6.1 Sol"),
 }
