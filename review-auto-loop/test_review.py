@@ -2552,7 +2552,7 @@ class ChainRunTest(WaveFixture):
         self.assertEqual(list(self.chain("correctness").iterdir()), [capture])
 
     def test_it_runs_the_reviewer_over_the_change(self) -> None:
-        """Run the domain's review skill from the repository root, on the skill and the instruction files alone, on the change, over the chain dir."""
+        """Run the domain's review skill from the repository root, on the skill and the instruction files alone, with the full context window, on the change, over the chain dir."""
         self.run_chain("readability")
         argv = self.spawn.call_args.args[0]
         reviewer = review.REVIEWERS[review.Domain.READABILITY]
@@ -2564,6 +2564,7 @@ class ChainRunTest(WaveFixture):
                 f"--effort={reviewer.effort}",
                 "--preset=standard",
                 "--no-system-prompt",
+                "--context-window=872k",
                 "--invoke-skill=review-readability",
             ],
         )

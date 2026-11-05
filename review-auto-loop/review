@@ -69,6 +69,8 @@ REVIEWERS = {
     Domain.TESTS: Reviewer("gpt-6-astra", "xhigh", "GPT 6 Astra"),
     Domain.DOCS: Reviewer("gpt-6.1-sol", "high", "GPT 6.1 Sol"),
 }
+# codex's context window ceiling for the reviewer models
+REVIEWER_CONTEXT_WINDOW = "872k"
 SUMMARY_MODEL = "gpt-6.1-sol"
 SUMMARY_EFFORT = "low"
 JUDGE_MODEL_NAME = "Fable 5.1 xhigh"
@@ -1071,7 +1073,12 @@ def read_summary(metadata: ReportMetadata) -> str:
 
 
 def agent_argv(
-    model: str, effort: str, preset: str, skill: str, arguments: str
+    model: str,
+    effort: str,
+    preset: str,
+    skill: str,
+    arguments: str,
+    context_window: str | None = None,
 ) -> list[str]:
     """Build the command line of an agent run under a single skill and the instruction files alone, its arguments last."""
     return [
@@ -1080,6 +1087,7 @@ def agent_argv(
         f"--effort={effort}",
         f"--preset={preset}",
         "--no-system-prompt",
+        *([] if context_window is None else [f"--context-window={context_window}"]),
         f"--invoke-skill={skill}",
         arguments,
     ]
@@ -1169,6 +1177,7 @@ def cmd_chain_run(args: argparse.Namespace) -> None:
             "standard",
             f"review-{args.domain}",
             reviewer_arguments(metadata.change_id, chain),
+            REVIEWER_CONTEXT_WINDOW,
         ),
         chain / f"run{len(counts) + 1}.md",
         check_capture,
