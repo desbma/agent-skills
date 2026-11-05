@@ -269,6 +269,16 @@ class CheckTest(unittest.TestCase):
             a -> b [ltail=cluster_a, lhead=cluster_b];
         """)
 
+    def test_compound_at_point(self) -> None:
+        """Leave apart the ends of arrows from or to an invisible point clipped to its frame."""
+        self.assert_no_defects("""
+            layout=dot; compound=true;
+            subgraph cluster_a { a [shape=point, style=invis, width=0]; }
+            subgraph cluster_d { d [shape=point, style=invis, width=0]; }
+            a -> b [ltail=cluster_a]; a -> c [ltail=cluster_a];
+            b -> d [lhead=cluster_d]; c -> d [lhead=cluster_d];
+        """)
+
     def test_compound_in_frame(self) -> None:
         """Report an arrowhead clipped to a frame against the frame around it."""
         report = self.check("""
@@ -302,7 +312,7 @@ class CheckTest(unittest.TestCase):
                 j [shape=point, style=invis, width=0, pos="60,60!"];
                 k [shape=point, style=invis, width=0, pos="140,140!"];
             }
-            a -> w -> h;
+            a -> w [headclip=false]; w -> h [tailclip=false];
             a -> b [style=invis, tailclip=false];
             a -> b [color=transparent, tailclip=false];
         """)
@@ -453,7 +463,7 @@ class CheckTest(unittest.TestCase):
         )
 
     def test_end_on_frame(self) -> None:
-        """Measure the ends of arrows on invisible points against the frame line under them."""
+        """Measure the ends of arrows on invisible points against the line under them."""
         report = self.check("""
             subgraph cluster_x {
                 m [pos="0,0!"];
@@ -463,13 +473,60 @@ class CheckTest(unittest.TestCase):
             e [shape=point, style=invis, width=0, pos="-60.5,20!"];
             f [shape=point, style=invis, width=0, pos="-62.5,-20!"];
             g [shape=point, style=invis, width=0, pos="60.5,0!"];
-            p [pos="-200,20!"]; q [pos="-200,-20!"]; r [pos="200,0!"];
-            p -> e; q -> f [dir=none]; g -> r [dir=back];
+            h [shape=point, style=invis, width=0, pos="29,-10!"];
+            p [pos="-200,20!"]; q [pos="-200,-20!"]; r [pos="200,0!"]; s [pos="200,-80!"];
+            p -> e; q -> f [dir=none]; g -> r [dir=back]; h -> s [tailclip=false];
         """)
         self.assertEqual(
             without_numbers(messages(report.defects)),
-            ["q -> f: head Npt off the outline of frame cluster_x"],
+            [
+                "h -> s: tail Npt off the outline of m",
+                "q -> f: head Npt off the outline of frame cluster_x",
+            ],
         )
+
+    def test_end_on_box(self) -> None:
+        """Measure the ends of arrows on invisible points against the box outline under or around them, and report those crossing it."""
+        report = self.check("""
+            a [pos="0,0!", width=1, height=1];
+            e [shape=point, style=invis, width=0, pos="36,24!"];
+            f [shape=point, style=invis, width=0, pos="33,0!"];
+            g [shape=point, style=invis, width=0, pos="20,-24!"];
+            h [shape=point, style=invis, width=0, pos="0,-36!"];
+            p [pos="200,24!"]; q [pos="200,0!"]; r [pos="200,-24!"]; s [pos="0,100!"];
+            e -> p [tailclip=false]; f -> q [tailclip=false]; g -> r [tailclip=false];
+            h -> s [tailclip=false];
+        """)
+        self.assertEqual(
+            without_numbers(messages(report.defects)),
+            [
+                "f -> q: tail Npt off the outline of a",
+                "f -> q: passes through a",
+                "g -> r: tail Npt off the outline of a",
+                "g -> r: passes through a",
+                "h -> s: passes through a",
+            ],
+        )
+
+    def test_bend(self) -> None:
+        """Report arrows meeting at an invisible point but ending apart, not unclipped ones joining there."""
+        report = self.check("""
+            a [pos="0,100!"]; b [pos="200,0!"]; x [pos="200,-100!"];
+            j [shape=point, style=invis, width=0, pos="0,0!"];
+            a -> j [dir=none]; j -> b; j -> x [tailclip=false];
+            c [pos="0,-100!"]; d [pos="200,-200!"];
+            k [shape=point, style=invis, width=0, pos="0,-200!"];
+            c -> k [dir=none, headclip=false]; k -> d [tailclip=false];
+        """)
+        self.assertEqual(
+            without_numbers(messages(report.defects)),
+            [
+                "a -> j: head Npt from the tail of j -> b",
+                "a -> j: head Npt from the tail of j -> x",
+                "j -> b: tail Npt from the tail of j -> x",
+            ],
+        )
+        self.assertEqual(positions(report.defects), [(31, 121), (31, 121), (32, 122)])
 
     def test_through_frame_to_its_line(self) -> None:
         """Report an arrow crossing a frame to end on its far line."""
