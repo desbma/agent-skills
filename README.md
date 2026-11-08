@@ -18,6 +18,7 @@ Personal [coding agent skills](https://agentskills.io/).
 ## Content
 
 - [`audit-skill-run`](.agents/skills/audit-skill-run/SKILL.md) (**meta skill**, for improving the other skills): Audit recent runs of a skill from their session transcripts, and propose improvements.
+- [`challenge-handoff`](challenge-handoff/SKILL.md): Adversarially review a handoff document, investigating as deep as needed, and append to it a single verified path forward with its rationale, or confirm its plan holds.
 - [`dot-diagrams`](dot-diagrams/SKILL.md): Generate diagrams, for example to illustrate Markdown docs, from Graphviz `.dot` files.
 - [`handoff`](handoff/SKILL.md): Summarize the conversation into one self-contained document per divergent path.
 - [`implem-brake`](implem-brake/SKILL.md): Forbid the agent from touching project files until explicitly allowed again, to discuss a change without it jumping to implementation. Invoked manually with `on`/`off`.
