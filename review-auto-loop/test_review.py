@@ -2073,7 +2073,7 @@ class JudgeRunTest(JudgedFixture):
             argv[:-1],
             [
                 "agent-worker",
-                "--model=claude-fable-5-1",
+                "--model=claude-fable-5-2",
                 "--effort=xhigh",
                 "--preset=read-only",
                 "--no-system-prompt",

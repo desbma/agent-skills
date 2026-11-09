@@ -73,7 +73,7 @@ REVIEWERS = {
 REVIEWER_CONTEXT_WINDOW = "872k"
 SUMMARY_MODEL = "gpt-6.1-sol"
 SUMMARY_EFFORT = "low"
-JUDGE_MODEL_NAME = "Fable 5.1 xhigh"
+JUDGE_MODEL_NAME = "Fable 5.2 xhigh"
 SUMMARY_PARSER = markdown_it.MarkdownIt("commonmark").enable("table")
 PARAGRAPH_TOKENS = frozenset({"paragraph_open", "inline", "paragraph_close"})
 SKILL_URL = "https://github.com/desbma/agent-skills/tree/master/review-auto-loop"
@@ -1362,7 +1362,7 @@ def cmd_judge_run(args: argparse.Namespace) -> None:
         diff.write_text(jj_output(["show", metadata.change_id]))
         run_agent(
             agent_argv(
-                "claude-fable-5-1",
+                "claude-fable-5-2",
                 "xhigh",
                 "read-only",
                 "review-judge",

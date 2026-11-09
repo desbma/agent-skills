@@ -56,7 +56,7 @@ The user keeps the final say: the recommendation is only each item's default, an
 | `review-tests` | GPT 6 Astra | xhigh | `hax` |
 | `review-docs` | GPT 6.1 Sol | high | `hax` |
 | `summarize-change` | GPT 6.1 Sol | low | `hax` / `pi` |
-| `review-judge` | Claude Fable 5.1 | xhigh | `claude` |
+| `review-judge` | Claude Fable 5.2 | xhigh | `claude` |
 
 ## License
 
