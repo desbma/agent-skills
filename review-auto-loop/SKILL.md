@@ -66,7 +66,7 @@ On an `apply` the item's estimate stands, and the tail is a revision of that est
 
 Declining a `minor` item needs no defense; declining a `critical` one has to name what outweighs it, and when nothing does, the severity was wrong.
 
-The decision is added once the user has picked, exactly one per item, its reasoning never empty. Deciding an item again replaces its decision. `applied-with-changes` means the applied change departs from the item as the reviewer wrote it, whoever asked for the departure. Taking the proposal as offered maps verdict for verdict: `apply` to `applied`, `apply-with-changes` to `applied-with-changes`, `decline` to `declined`. A `your-call` item, or a pick that overrides the proposal, takes the verdict the user's choice actually produced.
+The decision is added once the user has picked, exactly one per item. It carries a reasoning only when it departs from the item's default — the judge's recommendation on a judged wave, the proposal otherwise — or settles a `your-call` the judge did not pick: the reasoning then says what departed and why, or which option the user chose. A decision taking the default carries none, not even a note that the user accepted it. Deciding an item again replaces its decision. `applied-with-changes` means the applied change departs from the item as the reviewer wrote it, whoever asked for the departure. Taking the proposal as offered maps verdict for verdict: `apply` to `applied`, `apply-with-changes` to `applied-with-changes`, `decline` to `declined`. A `your-call` item, or a pick that overrides the proposal, takes the verdict the user's choice actually produced.
 
 ## Wave round
 
@@ -149,12 +149,13 @@ The decision is added once the user has picked, exactly one per item, its reason
 7. Record the decisions, one invocation per item:
 
    ```bash
+   <SKILL_DIR>/review item decide <WAVE_REPORT> <ID> --verdict <VERDICT>
    <SKILL_DIR>/review item decide <WAVE_REPORT> <ID> --verdict <VERDICT> <<'EOF'
    <the reasoning>
    EOF
    ```
 
-   The reasoning records any change of course agreed in the conversation after the assessment. Run it again for an item whose decision changes later: it replaces the decision. Never open or show the annotated report.
+   The second form is for a decision carrying a reasoning (see Items). Run it again for an item whose decision changes later: it replaces the decision. Never open or show the annotated report.
 
 8. Summarize the wave — what the user decided, and what the applied changes touched — then ask once which move comes next: repeat the domains this wave ran, or move to the ones it left out, named as phases when the wave ran a phase. A wave that ran every domain leaves only the repeat to offer. Ending the loop is not offered as a third: it is what happens when no wave is asked for.
 

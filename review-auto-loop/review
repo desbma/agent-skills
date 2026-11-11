@@ -1463,16 +1463,6 @@ def cmd_item_import(args: argparse.Namespace) -> None:
         print(identifier)
 
 
-def prose(name: str) -> str:
-    """Read a prose argument from stdin."""
-    if sys.stdin.isatty():
-        raise SystemExit(f"The {name} comes from stdin")
-    value = sys.stdin.read().strip()
-    if not value:
-        raise SystemExit(f"The {name} is empty")
-    return value
-
-
 def lettered_options(args: argparse.Namespace) -> list[str]:
     """Letter a your-call's options in the order they were given."""
     return [
@@ -1519,7 +1509,11 @@ def proposal_lines(args: argparse.Namespace) -> list[str]:
 def cmd_item_assess(args: argparse.Namespace) -> None:
     """Write the claim, its analysis and the proposal below a quoted item."""
     proposal = proposal_lines(args)
-    analysis = prose("analysis")
+    if sys.stdin.isatty():
+        raise SystemExit("The analysis comes from stdin")
+    analysis = sys.stdin.read().strip()
+    if not analysis:
+        raise SystemExit("The analysis is empty")
 
     metadata = read_metadata(args.report)
     lines = read_lines(args.report)
@@ -1556,8 +1550,8 @@ def cmd_item_assess(args: argparse.Namespace) -> None:
 
 
 def cmd_item_decide(args: argparse.Namespace) -> None:
-    """Record the user's decision below an assessed item."""
-    reasoning = prose("reasoning")
+    """Record the user's decision below an assessed item, with the reasoning stdin holds, if any."""
+    reasoning = "" if sys.stdin.isatty() else sys.stdin.read().strip()
     metadata = read_metadata(args.report)
     lines = read_lines(args.report)
     start, end = item_span(lines, args.id)
@@ -1566,16 +1560,10 @@ def cmd_item_decide(args: argparse.Namespace) -> None:
         raise SystemExit(f"Item {args.id} has no assessment")
     decided = decision_index(item)
     decision = end if decided is None else start + decided
-    block = render_prose(
-        [
-            f"**Decision**: {args.verdict}",
-            "",
-            "**Reasoning**:",
-            "",
-            *reasoning.splitlines(),
-        ],
-        anchor_targets(metadata),
-    )
+    block = [f"**Decision**: {args.verdict}"]
+    if reasoning:
+        block += ["", "**Reasoning**:", "", *reasoning.splitlines()]
+    block = render_prose(block, anchor_targets(metadata))
     kept = lines[:decision]
     decided = splice(kept, len(kept), block)
     write_lines(args.report, decided + ([""] + lines[end:] if lines[end:] else []))

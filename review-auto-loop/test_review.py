@@ -678,20 +678,25 @@ def patch_agent(
 class CliFixture(unittest.TestCase):
     """Driving the script through its own parser, as the skill's shell calls do."""
 
-    def run_cli(self, *argv: Any, stdin: str | None = None) -> str:
-        """Run one subcommand and return what it printed."""
+    def run_cli(self, *argv: Any, stdin: str | None = "") -> str:
+        """Run one subcommand and return what it printed, a `None` stdin standing for a terminal."""
+        source: Any = io.StringIO(stdin)
+        if stdin is None:
+            source = mock.Mock(
+                **{"isatty.return_value": True, "read.side_effect": AssertionError}
+            )
         out = io.StringIO()
         self.stderr = io.StringIO()
         with (
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(self.stderr),
-            mock.patch("sys.stdin", io.StringIO(stdin or "")),
+            mock.patch("sys.stdin", source),
         ):
             args = review.build_parser().parse_args([str(arg) for arg in argv])
             args.func(args)
         return out.getvalue()
 
-    def assert_cli_error(self, *argv: Any, stdin: str | None = None) -> None:
+    def assert_cli_error(self, *argv: Any, stdin: str | None = "") -> None:
         """Assert that a subcommand exits instead of running."""
         with self.assertRaises(SystemExit):
             self.run_cli(*argv, stdin=stdin)
@@ -904,7 +909,7 @@ class WaveFixture(CliFixture):
         self,
         identifier: str,
         verdict: str = "applied",
-        reasoning: str = "as proposed",
+        reasoning: str | None = "",
         report: Path | None = None,
     ) -> None:
         """Record an item's decision, the defaults standing for taking the proposal."""
@@ -1321,9 +1326,7 @@ class WaveTest(WaveFixture):
         self.assess(identifier, stdin=analysis)
         self.decide(identifier)
         self.assertIn(
-            "**Proposal**: apply\n\n**Decision**: applied\n\n**Reasoning**:\n\n"
-            "as proposed",
-            self.report.read_text(),
+            "**Proposal**: apply\n\n**Decision**: applied\n", self.report.read_text()
         )
 
     def test_a_fenced_judge_line_leaves_the_item_assessable(self) -> None:
@@ -1344,11 +1347,7 @@ class WaveTest(WaveFixture):
         self.decide(identifier)
         text = self.report.read_text()
         self.assertIn("which no longer holds.", text)
-        self.assertIn(
-            "**Proposal**: apply\n\n**Decision**: applied\n\n**Reasoning**:\n\n"
-            "as proposed",
-            text,
-        )
+        self.assertIn("**Proposal**: apply\n\n**Decision**: applied\n", text)
 
     def test_an_analysis_reading_as_a_decision_leaves_the_wave_open(self) -> None:
         """Refuse a decision line an analysis writes as the user's decision."""
@@ -1466,49 +1465,46 @@ class WaveTest(WaveFixture):
             text,
         )
 
-    def test_blank_prose_is_refused(self) -> None:
-        """Refuse an analysis or a reasoning made of whitespace, and write nothing."""
+    def test_decide_without_reasoning(self) -> None:
+        """Write the decision alone when stdin holds no reasoning or is a terminal."""
+        self.capture("correctness", 1)
+        self.imported_assessed("correctness")
+        self.decide("C1", reasoning=None)
+        self.decide("C2", reasoning=" \n")
+        text = self.report.read_text()
+        self.assertNotIn("**Reasoning**", text)
+        self.assertEqual(
+            text.count("**Proposal**: apply\n\n**Decision**: applied\n"), 2
+        )
+
+    def test_blank_analysis_is_refused(self) -> None:
+        """Refuse an analysis made of whitespace or left to a terminal, and write nothing."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         before = self.report.read_text()
-        self.assert_cli_error(
-            "item",
-            "assess",
-            self.report,
-            identifier,
-            "holds",
-            "major",
-            "apply",
-            stdin=" \n",
-        )
-        self.assertEqual(self.report.read_text(), before)
-        self.assess(identifier)
-        before = self.report.read_text()
-        self.assert_cli_error(
-            "item",
-            "decide",
-            self.report,
-            identifier,
-            "--verdict",
-            "applied",
-            stdin=" \n",
-        )
+        for stdin in (" \n", None):
+            self.assert_cli_error(
+                "item",
+                "assess",
+                self.report,
+                identifier,
+                "holds",
+                "major",
+                "apply",
+                stdin=stdin,
+            )
         self.assertEqual(self.report.read_text(), before)
 
     def test_decide_overwrites_and_keeps_the_assessment(self) -> None:
         """Deciding twice replaces the decision and leaves the assessment alone."""
         self.capture("correctness", 1)
         self.imported_assessed("correctness")
-        self.decide("C1")
         self.decide("C1", "declined", "reverted afterwards")
+        self.decide("C1")
         text = self.report.read_text()
-        self.assertNotIn("as proposed", text)
+        self.assertNotIn("**Reasoning**", text)
         self.assertEqual(text.count("**Decision**"), 1)
-        self.assertIn(
-            "**Proposal**: apply\n\n**Decision**: declined\n\n"
-            "**Reasoning**:\n\nreverted afterwards\n",
-            text,
-        )
+        self.assertIn("**Proposal**: apply\n\n**Decision**: applied\n", text)
 
     def test_report_format(self) -> None:
         """Write the top part, the summary, the index and the links in one pass, and print the recap."""
@@ -1827,10 +1823,7 @@ class WaveTest(WaveFixture):
         self.decide(identifiers[-1])
         lines = self.report.read_text().splitlines()
         self.assertTrue(lines[-1].startswith("<p "))
-        self.assertEqual(
-            lines[-7:-1],
-            ["**Decision**: applied", "", "**Reasoning**:", "", "as proposed", ""],
-        )
+        self.assertEqual(lines[-3:-1], ["**Decision**: applied", ""])
 
     def test_an_empty_capture_is_a_completed_run(self) -> None:
         """Count a run that printed nothing as complete, having found no item."""
