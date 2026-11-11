@@ -6,7 +6,6 @@
 """Build and maintain the wave report of a review-auto-loop wave."""
 
 import argparse
-import collections
 import collections.abc
 import dataclasses
 import enum
@@ -59,9 +58,7 @@ PHASE_DOMAINS = {
 RUNNING_STR = "▶ running"
 
 DEFAULT_REVSET = "latest(::@ & ~empty())"
-CAP_SCALES = collections.defaultdict(
-    tuple, dict.fromkeys(PHASE_DOMAINS["A"], ((100, 2), (1000, 3), (5000, 4)))
-)
+CAP_SCALES = dict.fromkeys(PHASE_DOMAINS["A"], ((100, 2), (1000, 3), (5000, 4)))
 
 REVIEWERS = {
     Domain.CORRECTNESS: Reviewer("gpt-6-astra", "xhigh", "GPT 6 Astra"),
@@ -317,7 +314,12 @@ def derive_loop_caps(revision: str) -> dict[Domain, int]:
     added = added_lines(revision)
     return {
         domain: next(
-            (cap for lines, cap in reversed(CAP_SCALES[domain]) if added >= lines), 1
+            (
+                cap
+                for lines, cap in reversed(CAP_SCALES.get(domain, ()))
+                if added >= lines
+            ),
+            1,
         )
         for domain in Domain
     }
