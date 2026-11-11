@@ -1979,15 +1979,57 @@ class JudgeCheckTest(unittest.TestCase):
     def test_a_departure_naming_another_change_stands(self) -> None:
         """Accept a departure to apply-with-changes from every other proposal and from itself, and one off every option."""
         self.check(
-            "**C1**: disagree, apply-with-changes\n\nWiden it.\n\n"
-            "**C2**: disagree, apply-with-changes\n\nBound the caller instead.\n\n"
+            "**C1**: disagree, apply-with-changes (production +14 lines, tests +1 line)"
+            "\n\nWiden it.\n\n"
+            "**C2**: disagree, apply-with-changes (production -12 lines, tests -10 lines)"
+            "\n\nBound the caller instead.\n\n"
             "**R1**: disagree, decline\n\nNeither option is worth it.\n"
         )
         self.check(
-            "**C1**: disagree, apply-with-changes\n\nBound the caller instead.\n\n"
+            "**C1**: disagree, apply-with-changes (production 0 lines, tests 0 lines)"
+            "\n\nBound the caller instead.\n\n"
             "**C2**: agree\n\n**R1**: option b\n\nShorter.\n",
             {**self.PROPOSALS, "C1": ("apply with changes", [])},
         )
+
+    def test_a_change_carries_its_delta_and_nothing_else_does(self) -> None:
+        """Refuse a change without its delta or with a malformed one, and a delta on any other verdict."""
+        for delta, refused in (
+            ("", "C1 .* gives no delta"),
+            (
+                " (production +8 to 15 lines, tests 0 lines)",
+                r"C1 .* gives its delta as production \+8 to 15 lines, tests 0 lines,",
+            ),
+            (
+                " (production 3 lines, tests 0 lines)",
+                "C1 .* gives its delta as production 3 lines",
+            ),
+            (
+                " (production +3 lines, tests 0 lines including a regression test)",
+                "C1 .* gives its delta as",
+            ),
+        ):
+            with self.assertRaisesRegex(SystemExit, refused):
+                self.check(
+                    self.WHOLE.replace(
+                        "**C1**: agree",
+                        f"**C1**: disagree, apply-with-changes{delta}\n\nWiden it.",
+                    )
+                )
+        for old, new, refused in (
+            (
+                "**C2**: agree",
+                "**C2**: disagree, apply (production +1 line, tests 0 lines)\n\nWhy.",
+                "C2 .* gives a delta",
+            ),
+            (
+                "option b",
+                "option b (production +1 line, tests 0 lines)",
+                "R1 .* gives a delta",
+            ),
+        ):
+            with self.assertRaisesRegex(SystemExit, refused):
+                self.check(self.WHOLE.replace(old, new))
 
     def test_a_judgment_handing_the_choice_back_is_refused(self) -> None:
         """Refuse a verdict sending an item to the user: every verdict names an action to take."""
@@ -2015,6 +2057,7 @@ class JudgeCheckTest(unittest.TestCase):
         """Refuse prose carrying a line the wave report would read as its own structure."""
         for line in (
             "**Judge**: agree",
+            "**Judge**: disagree, apply-with-changes (production +3 lines, tests 0 lines)",
             "**Proposal**: apply",
             "**Decision**: applied",
             "#### C9 (run 1, item 1)",
@@ -2259,12 +2302,14 @@ class JudgeReportTest(JudgedFixture):
         self.judge(
             output=(
                 "**C2**: option b\n\nUniformity is not worth twelve lines.\n\n"
-                "**C1**: disagree, apply-with-changes\n\nWiden it to the caller.\n"
+                "**C1**: disagree, apply-with-changes (production +3 lines, tests 0 lines)"
+                "\n\nWiden it to the caller.\n"
             )
         )
         text = self.report.read_text()
         self.assertIn(
-            "::: warning\n**Judge**: disagree, apply-with-changes\n\n"
+            "::: warning\n**Judge**: disagree, apply-with-changes "
+            "(production +3 lines, tests 0 lines)\n\n"
             "Widen it to the caller.\n:::\n",
             text,
         )
@@ -2351,8 +2396,8 @@ class JudgeReportTest(JudgedFixture):
         )
         self.judge(
             output=(
-                "**C1**: disagree, apply-with-changes\n\n"
-                "The bounded fix is needed.\n\n**C2**: agree\n"
+                "**C1**: disagree, apply-with-changes (production +5 lines, tests +9 lines)"
+                "\n\nThe bounded fix is needed.\n\n**C2**: agree\n"
             )
         )
         self.run_cli("report", "format", self.report)

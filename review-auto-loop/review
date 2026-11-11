@@ -112,8 +112,14 @@ PROPOSAL_RE = re.compile(
 DECISION_RE = re.compile(r"\*\*Decision\*\*: (applied with changes|applied|declined)")
 
 JUDGE_VERDICT = r"agree|disagree, (?:apply-with-changes|apply|decline)|option [a-z]"
-JUDGE_CAPTURE_RE = re.compile(rf"\*\*([CRTD]\d+)\*\*: ({JUDGE_VERDICT})\s*$")
-JUDGE_RE = re.compile(rf"\*\*Judge\*\*: ({JUDGE_VERDICT})\s*$")
+JUDGE_CHANGE = "disagree, apply-with-changes"
+LINE_COUNT = r"(?:[+-][1-9]\d*|0) lines?"
+JUDGE_DELTA = rf"production {LINE_COUNT}, tests {LINE_COUNT}"
+JUDGE_DELTA_RE = re.compile(JUDGE_DELTA)
+JUDGE_CAPTURE_RE = re.compile(
+    rf"\*\*([CRTD]\d+)\*\*: ({JUDGE_VERDICT})(?: \((.*)\))?\s*$"
+)
+JUDGE_RE = re.compile(rf"\*\*Judge\*\*: ({JUDGE_VERDICT})(?: \({JUDGE_DELTA}\))?\s*$")
 JUDGE_CLASSES = {"agree": "note", "option": "tip", "disagree": "warning"}
 JUDGE_BUCKETS = {"agree": "agreed", "disagree": "disagreed", "option": "picked"}
 OPTION_RE = re.compile(r"- \(([a-z])\) ")
@@ -1237,18 +1243,8 @@ def judge_verdict(verdict: str) -> tuple[str, str]:
     return kind.removesuffix(","), tail
 
 
-def judge_block(callout: str, verdict: str, prose: list[str]) -> list[str]:
-    """Render a recommendation as a fenced div of the given callout class."""
-    return [
-        f"::: {callout}",
-        f"**Judge**: {verdict}",
-        *(["", *prose] if prose else []),
-        ":::",
-    ]
-
-
-def judge_blocks(capture: Path) -> dict[str, tuple[str, list[str]]]:
-    """Read every block of a judgment: the item it rules on, its verdict, and the prose below it."""
+def judge_blocks(capture: Path) -> dict[str, tuple[str, str | None, list[str]]]:
+    """Read each item's judgment from the capture."""
     lines = capture.read_text().splitlines()
     opened = [
         (index, match)
@@ -1259,7 +1255,7 @@ def judge_blocks(capture: Path) -> dict[str, tuple[str, list[str]]]:
     first = opened[0][0] if opened else len(lines)
     if any(line.strip() for line in lines[:first]):
         raise SystemExit(f"{name} says something before its first recommendation")
-    blocks: dict[str, tuple[str, list[str]]] = {}
+    blocks: dict[str, tuple[str, str | None, list[str]]] = {}
     for (start, match), end in zip(
         opened, [index for index, _ in opened[1:]] + [len(lines)]
     ):
@@ -1271,7 +1267,7 @@ def judge_blocks(capture: Path) -> dict[str, tuple[str, list[str]]]:
             prose.pop(0)
         while prose and not prose[-1].strip():
             prose.pop()
-        blocks[identifier] = (match.group(2), prose)
+        blocks[identifier] = (match.group(2), match.group(3), prose)
     return blocks
 
 
@@ -1301,7 +1297,7 @@ def check_judgment(proposals: dict[str, tuple[str, list[str]]], capture: Path) -
         raise SystemExit(
             f"{name} rules on items the wave has not: {', '.join(unknown)}"
         )
-    for identifier, (verdict, prose) in blocks.items():
+    for identifier, (verdict, delta, prose) in blocks.items():
         proposal, letters = proposals[identifier]
         kind, tail = judge_verdict(verdict)
         where = f"{identifier} in {name}"
@@ -1319,6 +1315,15 @@ def check_judgment(proposals: dict[str, tuple[str, list[str]]], capture: Path) -
             and proposal in (Proposal.APPLY, Proposal.DECLINE)
         ):
             raise SystemExit(f"{where} departs from {proposal} to {proposal}")
+        if verdict == JUDGE_CHANGE and delta is None:
+            raise SystemExit(f"{where} gives no delta for the change it names")
+        if verdict != JUDGE_CHANGE and delta is not None:
+            raise SystemExit(f"{where} gives a delta on a verdict naming no change")
+        if delta is not None and not JUDGE_DELTA_RE.fullmatch(delta):
+            raise SystemExit(
+                f"{where} gives its delta as {delta}, "
+                "not as production <count> lines, tests <count> lines"
+            )
         structure = next(
             (line for _, line in structural_lines(prose) if reads_as_structure(line)),
             None,
@@ -1373,11 +1378,17 @@ def cmd_judge_run(args: argparse.Namespace) -> None:
         )
     targets = anchor_targets(metadata)
     lines = read_lines(args.report)
-    for identifier, (verdict, prose) in judge_blocks(capture).items():
+    for identifier, (verdict, delta, prose) in judge_blocks(capture).items():
         start, end = item_span(lines, identifier)
         decided = decision_index(lines[start:end])
         at = end if decided is None else start + decided
-        block = judge_block(JUDGE_CLASSES[judge_verdict(verdict)[0]], verdict, prose)
+        callout = JUDGE_CLASSES[judge_verdict(verdict)[0]]
+        block = [
+            f"::: {callout}",
+            f"**Judge**: {verdict}" + ("" if delta is None else f" ({delta})"),
+            *(["", *prose] if prose else []),
+            ":::",
+        ]
         lines = splice(lines, at, render_prose(block, targets))
     write_lines(args.report, lines)
     print(capture.read_text(), end="")
@@ -1583,10 +1594,7 @@ class IndexEntry:
 
     def styled_severity(self) -> str:
         """Pick the severity the entry is styled by, empty for none."""
-        judge_applies = self.judge in (
-            "disagree, apply",
-            "disagree, apply-with-changes",
-        )
+        judge_applies = self.judge in ("disagree, apply", JUDGE_CHANGE)
         if self.claim == Claim.DOES_NOT_HOLD:
             return self.reviewer_severity if judge_applies else ""
         if self.proposal == Proposal.DECLINE and not judge_applies:

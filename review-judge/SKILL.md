@@ -73,7 +73,7 @@ One block per item, opening with the item's id as a bold label, and running to t
 ```markdown
 **C4**: agree
 
-**C5**: disagree, apply-with-changes
+**C5**: disagree, apply-with-changes (production +3 lines, tests +10 lines)
 
 The fix bounds the one loop the item names, but `walk_parents` and `walk_children` recurse the same way. Bound all three at the entry point they share.
 
@@ -89,6 +89,8 @@ The verdict is one of:
 - `agree` — take the proposal as it stands, **with no prose at all**: the verdict is the whole block.
 - `disagree, <verdict>`, where `<verdict>` is `apply`, `apply-with-changes` or `decline` — a departure from the proposal, carrying a paragraph saying why.
 - `option <letter>` — only on an item proposed `your call`, naming one of the options it offers, carrying a paragraph too.
+
+`disagree, apply-with-changes` closes its line with the delta of the change it names, in parentheses, as in C5 above; no other verdict carries one. Count that change against the code as it stands, since neither the item's estimate nor the assessor's covers it. The delta is two net line counts, production then tests, each a single number: the lines the change adds minus those it removes, signed unless zero, like `production -8 lines, tests 0 lines`. Test code is test files and modules, inline test blocks such as Rust `#[cfg(test)]` modules, fixtures and test data; everything else is production, documentation files included. A comment counts with the code it sits in. A change rewriting lines in place counts `0`. When one course resolves several items, the item recommending it carries its whole count, and a covered item you rule `apply-with-changes` counts `production 0 lines, tests 0 lines`.
 
 Every verdict names an action to take. You never hand a choice back: a `your call` item is one you settle, and an item the assessor settled is not one you reopen. Where the call is close, pick the course you would defend and say what the other buys; the user overrides you when they disagree.
 
