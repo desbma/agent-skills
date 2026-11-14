@@ -2,6 +2,14 @@
 name: review-auto-loop
 description: Review Jujutsu revision changes with external reviewer agents, in waves of parallel per-domain review chains, driven by the user. Use only when the user asks for this loop by name, or gives the go for the next wave of a loop already underway; a request to review a revision, on its own, is not enough. Do NOT use to read, answer or apply a review that already exists and was written by something else; handle those directly, without this skill.
 argument-hint: "[JJ_REVISION] [domain=N ...] [judge=no]"
+hooks:
+  PostToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: >-
+            jq -c 'select(.tool_input.command | test("/review header show "))
+            | {systemMessage: ("\n" + .tool_response.stdout)}'
 ---
 
 # Review auto-loop
