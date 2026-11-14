@@ -1,6 +1,6 @@
 ---
 name: rust-project-maintenance
-description: Execute Rust project maintenance around dependencies, Clippy lint lists, etc.
+description: Execute Rust project maintenance around dependencies, lint lists, etc.
 disable-model-invocation: true
 ---
 
@@ -21,7 +21,7 @@ Decide the scope according to the user's request formulation. If unsure, default
 ## Workflow
 
 Execute each task in order, one at a time, and never do work belonging to a later task before reaching it.
-When a command run during a task (build, tests, linters...) reports issues that a later task covers, leave them for that task, even if the current task definition says to fix all surfacing issues. For example, do not fix Clippy warnings before the _Clippy lint list update_ task, as the updated lint list may disable some of the reported lints.
+When a command run during a task (build, tests, linters...) reports issues that a later task covers, leave them for that task, even if the current task definition says to fix all surfacing issues. For example, do not fix lint warnings before the _Lint list update_ task, as the updated lint list may disable some of the reported lints.
 If a task is skipped, or requires no change to the code after being analyzed, simply continue to the next one.
 If a task has required some code changes, pause before executing the next task, show a _progress report_ as shown below, followed by a short description of your last changes, and wait for the user to review your work and signal you can continue.
 Once all tasks are done, show a final _progress report_.
@@ -37,7 +37,7 @@ Maintenance tasks (3/4):
 1. ☑ AGENTS.md update [DONE]
 2. ☑ Dependencies compatible update [SKIPPED]
 3. ☑ Cargo audit [REVIEW]
-4. ☐ Clippy lint list update
+4. ☐ Lint list update
 ```
 
 Note that `[PENDING]` is omitted for pending tasks.
@@ -52,7 +52,7 @@ The list of tasks to execute for each scope follows. Refer to the task definitio
 - Pre commit hook removal
 - AGENTS.md update
 - Cargo audit
-- Clippy lint list update
+- Lint list update
 
 ### _Standard_ scope
 
@@ -60,8 +60,8 @@ The list of tasks to execute for each scope follows. Refer to the task definitio
 - AGENTS.md update
 - Dependencies compatible update
 - Cargo audit
-- Clippy lint list update
 - MSRV check
+- Lint list update
 
 ### _Complete_ scope
 
@@ -69,8 +69,8 @@ The list of tasks to execute for each scope follows. Refer to the task definitio
 - AGENTS.md update
 - Dependencies breaking update
 - Cargo audit
-- Clippy lint list update
 - MSRV check
+- Lint list update
 - GitHub actions update
 - Changelog template update
 - Release script update
@@ -123,23 +123,27 @@ Run `cargo audit` and fix all reported warnings:
 - replace abandoned dependencies by mature and maintained ones, similar in scope
 - consider the recommended actions for security issues (version bump, feature to disable...)
 
-### Clippy lint list update
-
-Compare the current Clippy configuration from `lints.*` or `workspace.lints.*` sections in `Cargo.toml` file with the reference template at `https://github.com/desbma/cargo-template/blob/master/Cargo.toml`.
-Copy the reference lint configuration locally, including comments, but respect lints that were intentionally disabled:
-
-- by being already present in the list commented out
-- by being set to `allow` (leave such lines)
-
-Also copy the `https://github.com/desbma/cargo-template/blob/master/clippy.toml` reference file locally if it is missing or less complete than the reference.
-
-Then run Clippy on the local project, covering all code (including tests and features not enabled by default), and fix any warnings that surface, either by running `cargo fix`, by updating the code to fix the root cause, or by ignoring it locally.
-
 ### MSRV check
 
 Skip this task if the current project has no `package.rust-version` attribute set in `Cargo.toml`.
 
 Run `cargo msrv verify`. Update reported MSRV if it is incorrect, using `cargo msrv` to find the correct value.
+
+### Lint list update
+
+Compare the current lint configuration from `lints.*` or `workspace.lints.*` sections in `Cargo.toml` file with the reference template at `https://github.com/desbma/cargo-template/blob/master/Cargo.toml`.
+Copy the reference lint configuration locally, including comments, but respect lints that were intentionally disabled:
+
+- by being already present in the list commented out
+- by being set to `allow` (leave such lines)
+
+Ask the user, for each lint set locally to `warn` or `deny` and absent from the reference, whether to remove it.
+
+If `Cargo.toml` sets a `rust-version`, run `cargo +<rust-version> check`, installing the toolchain if needed, and remove the copied entries it warns about, such as an `unknown lint` or an `unused manifest key` under `lints`. List them as skipped in the description of your changes.
+
+Also copy the `https://github.com/desbma/cargo-template/blob/master/clippy.toml` reference file locally if it is missing or less complete than the reference.
+
+Then run Clippy on the local project, covering all code (including tests and features not enabled by default), and fix any warnings that surface, either by running `cargo fix`, by updating the code to fix the root cause, or by ignoring it locally.
 
 ### GitHub actions update
 
