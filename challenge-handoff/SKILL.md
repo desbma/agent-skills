@@ -11,9 +11,11 @@ Review the handoff document given as argument adversarially: treat every claim, 
 
 ## Investigate
 
-Read the document, the sibling documents it points to, and everything it references. Then dig as deep as the problem requires: the code paths involved, the source of dependencies, libraries, the kernel or any upstream project, issue trackers, documentation, the web. Prove behavior by running it: build, reproduce the problem, write throwaway tests, prototype the fix, in a scratch copy of the project, or in a VM when the host cannot run it.
+Read the document, the sibling documents it points to, and everything it references. Then dig as deep as the problem requires: the code paths involved, the source of dependencies, libraries, the kernel or any upstream project, issue trackers, documentation, the web. Prove behavior by running it: build, reproduce the problem, write throwaway tests, prototype the part of a fix whose feasibility is in doubt, in a scratch copy of the project, or in a VM when the host cannot run it.
 
 All of this is yours to do without asking. Never offer the user an investigation or an experiment, and never ask whether to go further: go further.
+
+Go as deep as the facts require, but write only the code an experiment needs: another agent implements the path forward from your section, and anything you build beyond that is thrown away. Give each experiment one question to answer, like whether a prescribed test fails on the current code, whether a caller breaks under the change, or how a dependency behaves. Never implement the whole path, make the suite or linters pass over it, or leave a patch of it, in the document or elsewhere.
 
 Edit no file of the project: the handoff document is the only file you change.
 
