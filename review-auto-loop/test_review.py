@@ -13,6 +13,7 @@ import io
 import os
 import re
 import signal
+import socket
 import subprocess
 import tempfile
 import time
@@ -679,12 +680,17 @@ class CliFixture(unittest.TestCase):
     """Driving the script through its own parser, as the skill's shell calls do."""
 
     def run_cli(self, *argv: Any, stdin: str | None = "") -> str:
-        """Run one subcommand and return what it printed, a `None` stdin standing for a terminal."""
-        source: Any = io.StringIO(stdin)
+        """Run one subcommand and return its stdout, using socket stdin when `stdin` is `None`."""
         if stdin is None:
-            source = mock.Mock(
-                **{"isatty.return_value": True, "read.side_effect": AssertionError}
+            sock = self.enterContext(socket.socket())
+            source: Any = self.enterContext(sock.makefile())
+            self.enterContext(
+                mock.patch.object(source, "read", side_effect=AssertionError)
             )
+        else:
+            source = self.enterContext(tempfile.TemporaryFile("w+"))
+            source.write(stdin)
+            source.seek(0)
         out = io.StringIO()
         self.stderr = io.StringIO()
         with (
@@ -1466,7 +1472,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_decide_without_reasoning(self) -> None:
-        """Write the decision alone when stdin holds no reasoning or is a terminal."""
+        """Write the decision alone when stdin holds no reasoning or is of a kind the script does not read."""
         self.capture("correctness", 1)
         self.imported_assessed("correctness")
         self.decide("C1", reasoning=None)
@@ -1478,7 +1484,7 @@ class WaveTest(WaveFixture):
         )
 
     def test_blank_analysis_is_refused(self) -> None:
-        """Refuse an analysis made of whitespace or left to a terminal, and write nothing."""
+        """Refuse an analysis made of whitespace or a stdin of a kind the script does not read, and write nothing."""
         self.capture("correctness", 1)
         identifier = self.imported("correctness")[0]
         before = self.report.read_text()
@@ -3091,6 +3097,23 @@ class WorkflowTest(CliFixture):
         self.assertIn(
             "- **Config**: correctness ≤2 · docs ≤1", report.read_text().splitlines()
         )
+
+
+class ShouldReadStdinTest(unittest.TestCase):
+    """Telling whether stdin holds input to read."""
+
+    def test_pipe_is_read_terminal_is_not(self) -> None:
+        """Read stdin from a pipe, and not from a terminal."""
+        reader, writer = os.pipe()
+        primary, terminal = os.openpty()
+        for fd in (reader, writer, primary, terminal):
+            self.addCleanup(os.close, fd)
+        for fd, expected in ((reader, True), (terminal, False)):
+            with (
+                self.subTest(expected=expected),
+                mock.patch("sys.stdin", mock.Mock(**{"fileno.return_value": fd})),
+            ):
+                self.assertIs(review.should_read_stdin(), expected)
 
 
 class EntryPointTest(unittest.TestCase):

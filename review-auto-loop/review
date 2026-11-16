@@ -10,6 +10,7 @@ import collections.abc
 import dataclasses
 import enum
 import functools
+import os
 import re
 import shlex
 import signal
@@ -20,6 +21,7 @@ import tempfile
 import textwrap
 import time
 from pathlib import Path
+from stat import S_ISFIFO, S_ISREG
 
 import markdown_it
 import tabulate
@@ -1519,10 +1521,16 @@ def proposal_lines(args: argparse.Namespace) -> list[str]:
     ]
 
 
+def should_read_stdin() -> bool:
+    """Tell whether to read stdin: only a pipe or a file is read."""
+    mode = os.fstat(sys.stdin.fileno()).st_mode
+    return S_ISFIFO(mode) or S_ISREG(mode)
+
+
 def cmd_item_assess(args: argparse.Namespace) -> None:
     """Write the claim, its analysis and the proposal below a quoted item."""
     proposal = proposal_lines(args)
-    if sys.stdin.isatty():
+    if not should_read_stdin():
         raise SystemExit("The analysis comes from stdin")
     analysis = sys.stdin.read().strip()
     if not analysis:
@@ -1564,7 +1572,7 @@ def cmd_item_assess(args: argparse.Namespace) -> None:
 
 def cmd_item_decide(args: argparse.Namespace) -> None:
     """Record the user's decision below an assessed item, with the reasoning stdin holds, if any."""
-    reasoning = "" if sys.stdin.isatty() else sys.stdin.read().strip()
+    reasoning = sys.stdin.read().strip() if should_read_stdin() else ""
     metadata = read_metadata(args.report)
     lines = read_lines(args.report)
     start, end = item_span(lines, args.id)
