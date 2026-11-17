@@ -51,11 +51,11 @@ The user keeps the final say: the recommendation is only each item's default, an
 
 | Skill | Model | Effort | Harness |
 | --- | --- | --- | --- |
-| `review-correctness` | GPT 6 Astra | xhigh | `hax` |
-| `review-readability` | GPT 6.1 Sol | xhigh | `hax` |
-| `review-tests` | GPT 6 Astra | xhigh | `hax` |
-| `review-docs` | GPT 6.1 Sol | high | `hax` |
-| `summarize-change` | GPT 6.1 Sol | low | `hax` / `pi` |
+| `review-correctness` | GPT 6.2 Astra | xhigh | `hax` |
+| `review-readability` | GPT 6.2 Sol | xhigh | `hax` |
+| `review-tests` | GPT 6.2 Astra | xhigh | `hax` |
+| `review-docs` | GPT 6.2 Sol | high | `hax` |
+| `summarize-change` | GPT 6.2 Sol | low | `hax` / `pi` |
 | `review-judge` | Claude Fable 5.2 | xhigh | `claude` |
 
 ## License
