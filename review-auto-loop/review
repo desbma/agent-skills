@@ -63,9 +63,9 @@ DEFAULT_REVSET = "latest(::@ & ~empty())"
 CAP_SCALES = dict.fromkeys(PHASE_DOMAINS["A"], ((100, 2), (1000, 3), (5000, 4)))
 
 REVIEWERS = {
-    Domain.CORRECTNESS: Reviewer("gpt-6.2-astra", "xhigh", "GPT 6.2 Astra"),
+    Domain.CORRECTNESS: Reviewer("gpt-6-astra", "xhigh", "GPT 6 Astra"),
     Domain.READABILITY: Reviewer("gpt-6.2-sol", "xhigh", "GPT 6.2 Sol"),
-    Domain.TESTS: Reviewer("gpt-6.2-astra", "xhigh", "GPT 6.2 Astra"),
+    Domain.TESTS: Reviewer("gpt-6-astra", "xhigh", "GPT 6 Astra"),
     Domain.DOCS: Reviewer("gpt-6.2-sol", "high", "GPT 6.2 Sol"),
 }
 # codex's context window ceiling for the reviewer models
