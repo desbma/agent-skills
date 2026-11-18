@@ -70,7 +70,7 @@ REVIEWERS = {
 }
 # codex's context window ceiling for the reviewer models
 REVIEWER_CONTEXT_WINDOW = "872k"
-SUMMARY_MODEL = "gpt-6.2-sol"
+SUMMARY_MODEL = "gpt-6.1-terra"
 SUMMARY_EFFORT = "low"
 JUDGE_MODEL_NAME = "Fable 5.2 xhigh"
 SUMMARY_PARSER = markdown_it.MarkdownIt("commonmark").enable("table")

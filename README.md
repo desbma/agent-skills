@@ -55,7 +55,7 @@ The user keeps the final say: the recommendation is only each item's default, an
 | `review-readability` | GPT 6.2 Sol | xhigh | `hax` |
 | `review-tests` | GPT 6 Astra | xhigh | `hax` |
 | `review-docs` | GPT 6.2 Sol | high | `hax` |
-| `summarize-change` | GPT 6.2 Sol | low | `hax` / `pi` |
+| `summarize-change` | GPT 6.1 Terra | low | `hax` / `pi` |
 | `review-judge` | Claude Fable 5.2 | xhigh | `claude` |
 
 I run eval tests after each GPT release to update models if needed. The most recent versions are **not** always better.
