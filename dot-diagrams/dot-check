@@ -56,6 +56,10 @@ SVG_TRANSFORM = re.compile(
 FONT_RESOLUTION = re.compile(
     r'fontname: (?:"(.*)" resolved to: (?:.*" )?(.+)|unable to resolve "(.*)")'
 )
+# CSS generic font family name, in lower case
+GENERIC_FAMILY = re.compile(
+    r"(ui-)?(serif|sans-serif|monospace)|ui-rounded|system-ui|cursive|fantasy|emoji|math|fangsong"
+)
 # Line of Graphviz's verbose output listing the installed layout engines
 LAYOUTS = re.compile(r"^\s*layout\s*:\s*(.*)$", re.MULTILINE)
 
@@ -405,23 +409,31 @@ def has_neato() -> bool:
 
 
 def font_defects(log: str) -> list[str]:
-    """Find the fonts in Graphviz's verbose output whose text it measures with another font file than the one drawn."""
+    """Find the fonts in Graphviz's verbose output whose text it measures with another font than the one named or drawn."""
     defects = []
     for line in log.splitlines():
         if not (match := FONT_RESOLUTION.fullmatch(line)):
             continue
         name, measured = match[1] or match[3], match[2]
-        drawn = subprocess.run(
-            ["fc-match", "--format=%{file}", "--", name],
+        drawn, _, families = subprocess.run(
+            ["fc-match", "--format=%{file}\n%{family}", "--", name],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=None,
             check=True,
             text=True,
-        ).stdout
+        ).stdout.partition("\n")
+        first = name.split(",")[0].strip()
+        named = first.casefold()
         if measured != drawn:
             defects.append(
                 f'font "{name}": measured with {measured or "an unresolved font"}, drawn with {drawn}'
+            )
+        elif not GENERIC_FAMILY.fullmatch(
+            named
+        ) and named not in families.casefold().split(","):
+            defects.append(
+                f'font "{name}": measured with {families.split(",")[0]}, not {first}'
             )
     return defects
 

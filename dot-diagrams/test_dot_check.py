@@ -847,7 +847,7 @@ class MainTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
 
     def test_font(self) -> None:
-        """Print a font drawn with another file than the one measured as a defect, before layout defects, but not one drawn with the same file, and fail."""
+        """Print a font drawn with another file than the one measured as a defect, before layout defects, but not one measured and drawn with the font it names, and fail."""
         result = self.run_main("""
             a [pos="0,0!", fontname="DejaVu Sans Bold"];
             b [pos="100,0!"]; c [pos="200,0!"];
@@ -876,10 +876,31 @@ class MainTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
 
     def test_font_list(self) -> None:
-        """Check a font list starting with a dash, and succeed."""
-        result = self.run_main('a [pos="0,0!", fontname="-apple-system,sans-serif"];')
-        self.assertEqual(result.stdout, "Size: 62 × 44pt, 0 defects, 0 crossings\n")
-        self.assertEqual(result.returncode, 0)
+        """Print a font list whose first family is not the one measured as a defect, and fail."""
+        for name, mismatch in (
+            ("-apple-system,sans-serif", ".+, not -apple-system"),
+            ("DejaVu Sans Bold,DejaVu Sans", "DejaVu Sans, not DejaVu Sans Bold"),
+        ):
+            with self.subTest(name):
+                result = self.run_main(f'a [pos="0,0!", fontname="{name}"];')
+                self.assertRegex(
+                    result.stdout,
+                    rf'^Defect: font "{re.escape(name)}": measured with {mismatch}\n'
+                    r"Size: .*, 1 defect, 0 crossings\n$",
+                )
+                self.assertEqual(result.returncode, 1)
+
+    def test_font_family_names(self) -> None:
+        """Accept a font list whose first family is generic or any name of the measured font, whatever its case."""
+        for name in (
+            "sans-serif",
+            "monospace",
+            "DejaVu Sans Condensed,sans-serif",
+            " dejavu sans ,sans-serif",
+        ):
+            with self.subTest(name):
+                result = self.run_main(f'a [pos="0,0!", fontname="{name}"];')
+                self.assertRegex(result.stdout, r"^Size: .*, 0 defects, 0 crossings\n$")
 
     @contextlib.contextmanager
     def without_neato(self) -> Generator[None]:
