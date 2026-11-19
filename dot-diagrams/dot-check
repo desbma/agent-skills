@@ -24,8 +24,10 @@ type Finding = tuple[str, Point]
 ATTACH_TOLERANCE = 1.0
 # Distance from an arrow end within which another arrow meets it rather than crosses it, in points
 END_TOLERANCE = 2.0
-# Largest gap between the ends of arrows meeting at a node drawing nothing, in points
+# Largest gap between the ends of solid arrows meeting at an invisible node, in points
 JOIN_TOLERANCE = 0.1
+# Largest gap between the ends of arrows meeting at an invisible node when one is dashed or dotted, in points
+DASHED_JOIN_TOLERANCE = 2.0
 # Smallest angle between an arrowhead and the outline it touches, in degrees
 MIN_ARROWHEAD_ANGLE = 40.0
 # Smallest gap between two arrowheads, in points
@@ -112,6 +114,8 @@ class Edge:
     centerline: list[Polyline]
     # Tail and head, by name
     ends: dict[str, End]
+    # Whether the arrow is drawn dashed or dotted
+    dashed: bool
 
     def drawn(self) -> list[Polyline]:
         """Return the lines of the arrow and of its arrowheads."""
@@ -540,6 +544,9 @@ def check(graph: dict[str, Any], svg: str) -> Report:
             lines=lines,
             centerline=[bezier(path) for path in paths],
             ends=ends,
+            dashed=not {"dashed", "dotted"}.isdisjoint(
+                e.get("style", "").replace(",", " ").split()
+            ),
         )
         edges.append(edge)
         for kind in ("tail", "head"):
@@ -609,7 +616,10 @@ def check(graph: dict[str, Any], svg: str) -> Report:
     for joint in joints.values():
         for (a, a_kind), (b, b_kind) in itertools.combinations(joint, 2):
             point = a.ends[a_kind].point
-            if (gap := math.dist(point, b.ends[b_kind].point)) > JOIN_TOLERANCE:
+            tolerance = (
+                DASHED_JOIN_TOLERANCE if a.dashed or b.dashed else JOIN_TOLERANCE
+            )
+            if (gap := math.dist(point, b.ends[b_kind].point)) > tolerance:
                 defects.append(
                     (
                         f"{a.name}: {a_kind} {gap:.1f}pt from the {b_kind} of {b.name}",

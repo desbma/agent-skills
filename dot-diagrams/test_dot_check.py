@@ -528,6 +528,27 @@ class CheckTest(unittest.TestCase):
         )
         self.assertEqual(positions(report.defects), [(31, 121), (31, 121), (32, 122)])
 
+    def test_dashed_bend(self) -> None:
+        """Report dashed or dotted arrows meeting at an invisible point only when their ends lie farther apart than a dash gap."""
+        report = self.check("""
+            a [pos="0,100!"]; b [pos="200,0!"];
+            j [shape=point, style=invis, width=0, pos="0,0!"];
+            a -> j [dir=none, style=dashed]; j -> b [style=dashed];
+            c [pos="0,-100!"]; d [pos="200,-200!"];
+            k [shape=point, style=invis, width=0, pos="0,-200!"];
+            c -> k [dir=none, style="bold,dotted"]; k -> d;
+            e [pos="0,-300!"]; f [pos="200,-400!"];
+            m [shape=point, style=invis, pos="0,-400!"];
+            e -> m [dir=none, style=dashed]; m -> f [style=dashed];
+            g [pos="0,-500!"]; h [pos="200,-600!"];
+            n [shape=point, style=invis, width=0, pos="0,-600!"];
+            g -> n [dir=none]; n -> h [style=dashed];
+        """)
+        self.assertEqual(
+            without_numbers(messages(report.defects)),
+            ["e -> m: head Npt from the tail of m -> f"],
+        )
+
     def test_through_frame_to_its_line(self) -> None:
         """Report an arrow crossing a frame to end on its far line."""
         report = self.check("""
