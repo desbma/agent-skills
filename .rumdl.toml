@@ -7,3 +7,6 @@ disable = [
   "MD040", # Code blocks should have a language specified
   "MD041", # First line in file should be a top level heading
 ]
+
+[MD076]
+allow-loose-continuation = true
